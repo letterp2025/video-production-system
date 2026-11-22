@@ -79,4 +79,4 @@ target/
 **/project/
 **/performance/
 **/.workbench/
-tools/audio_narration_generator/docs/IGNORED_DOCS/
+/IGNORED_DOCS/
