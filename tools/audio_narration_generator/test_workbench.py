@@ -105,6 +105,31 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(saved["segments"][0]["status"], "inactive")
         self.assertEqual(result["manifest_hash"], result["state"]["manifest_hash"])
 
+    def test_reorder_moves_manifest_objects_without_changing_take_fingerprints(self):
+        self.data["segments"].append({"id": "last-beat", "status": "deleted", "text": "Retired line."})
+        self.write_manifest()
+        before = narration.generation_fingerprint(self.data["segments"][0], self.data, self.manifest)
+        old_array_hash = narration.segments_array_sha256(self.data)
+        digest = self.project.state_payload()["manifest_hash"]
+        result = self.project.reorder_segment("opening-hook", "last-beat", "after", digest)
+        saved = json.loads(self.manifest.read_text(encoding="utf-8"))
+        self.assertEqual([item["id"] for item in saved["segments"]], ["next-beat", "last-beat", "opening-hook"])
+        self.assertEqual(saved["segments"][-1]["custom_segment_field"], "keep")
+        self.assertEqual(narration.generation_fingerprint(saved["segments"][-1], saved, self.manifest), before)
+        self.assertNotEqual(narration.segments_array_sha256(saved), old_array_hash)
+        self.assertEqual(result["manifest_hash"], workbench.sha256_bytes(self.manifest.read_bytes()))
+        with self.assertRaisesRegex(workbench.WorkbenchError, "changed in another editor"):
+            self.project.reorder_segment("opening-hook", "next-beat", "before", digest)
+
+    def test_reorder_rejects_invalid_target_without_writing(self):
+        before = self.manifest.read_bytes()
+        digest = self.project.state_payload()["manifest_hash"]
+        with self.assertRaisesRegex(workbench.WorkbenchError, "not found"):
+            self.project.reorder_segment("opening-hook", "missing", "before", digest)
+        with self.assertRaisesRegex(workbench.WorkbenchError, "valid move direction"):
+            self.project.reorder_segment("opening-hook", "next-beat", "middle", digest)
+        self.assertEqual(self.manifest.read_bytes(), before)
+
     def test_title_edit_preserves_unchanged_tts_number_and_take_fingerprint(self):
         self.data["segments"][0]["tts"] = {"speed": 1.0}
         self.write_manifest()
@@ -295,6 +320,19 @@ class HttpTest(unittest.TestCase):
         encoded = json.dumps(payload)
         self.assertNotIn("ref.wav", encoded)
         self.assertNotIn("ref words", encoded)
+
+    def test_reorder_route_updates_manifest_array(self):
+        data = json.loads(self.manifest.read_text(encoding="utf-8"))
+        data["segments"].append({"id": "beat-two", "text": "Second words.", "status": "inactive"})
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        digest = self.project.state_payload()["manifest_hash"]
+        body = json.dumps({"segment_id": "beat-two", "target_id": "beat-one", "placement": "before", "manifest_hash": digest}).encode("utf-8")
+        request = Request(self.base + "/api/segments/reorder", data=body,
+                          headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(request) as response:
+            payload = json.loads(response.read())
+        self.assertEqual([item["id"] for item in payload["state"]["segments"]], ["beat-two", "beat-one"])
+        self.assertEqual([item["id"] for item in json.loads(self.manifest.read_text(encoding="utf-8"))["segments"]], ["beat-two", "beat-one"])
 
     def test_assembled_wav_supports_browser_byte_ranges(self):
         assembled = self.manifest.parent / "assembled"

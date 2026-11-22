@@ -48,6 +48,10 @@
         <span class="count-badge" id="segment-count">—</span>
       </div>
       <p class="sequence-help" id="sequence-help" aria-live="polite">List order is spoken order. Select a beat to edit it.</p>
+      <div class="beat-filters" aria-label="Beat visibility">
+        <label><input id="show-inactive" type="checkbox"> Show inactive</label>
+        <label><input id="show-deleted" type="checkbox"> Show deleted</label>
+      </div>
       <ol id="segment-list" class="segment-list"></ol>
       <div class="work-queue">
         <div>
@@ -74,11 +78,17 @@
         </div>
         <div class="title-row">
           <label class="field-label" for="segment-title">Segment title</label>
-          <select id="segment-status" aria-label="Segment status">
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="deleted">Deleted</option>
-          </select>
+          <div class="title-actions">
+            <div class="beat-order-controls" role="group" aria-label="Move selected beat">
+              <button id="move-beat-up" type="button" title="Move selected beat up">↑ Move beat up</button>
+              <button id="move-beat-down" type="button" title="Move selected beat down">↓ Move beat down</button>
+            </div>
+            <select id="segment-status" aria-label="Segment status">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="deleted">Deleted</option>
+            </select>
+          </div>
         </div>
         <input id="segment-title" class="title-input" maxlength="160" autocomplete="off">
         <div class="script-heading">

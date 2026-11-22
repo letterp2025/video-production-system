@@ -17,8 +17,41 @@ function loadWorkbench(elements = {}) {
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource })", context);
+  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget })", context);
 }
+
+test("beat visibility and move targets follow the manifest order", () => {
+  const { state, visibleSegments, reorderTarget } = loadWorkbench();
+  state.project = { segments: [
+    { id: "first", status: "active" }, { id: "hidden", status: "inactive" },
+    { id: "second", status: "active" }, { id: "retired", status: "deleted" },
+  ] };
+  assert.deepEqual(Array.from(visibleSegments(), (beat) => beat.id), ["first", "second"]);
+  assert.equal(reorderTarget("second", -1), "first");
+  assert.equal(reorderTarget("first", -1), null);
+  assert.equal(reorderTarget("second", 1), null);
+  assert.equal(reorderTarget("missing", 1), null);
+  state.project.segments.splice(2, 1);
+  state.project.segments.unshift({ id: "second", status: "active" });
+  assert.deepEqual(Array.from(visibleSegments(), (beat) => beat.id), ["second", "first"]);
+  assert.equal(reorderTarget("second", 1), "first");
+  state.showInactive = true;
+  assert.deepEqual(Array.from(visibleSegments(), (beat) => beat.id), ["second", "first", "hidden"]);
+  assert.equal(reorderTarget("first", 1), "hidden");
+  state.showDeleted = true;
+  assert.deepEqual(Array.from(visibleSegments(), (beat) => beat.id), ["second", "first", "hidden", "retired"]);
+});
+
+test("move buttons have visible labels in the selected beat editor", () => {
+  const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
+  const editorStart = html.indexOf('<div id="editor"');
+  const titleInput = html.indexOf('<input id="segment-title"', editorStart);
+  assert.ok(editorStart >= 0 && titleInput > editorStart);
+  const header = html.slice(editorStart, titleInput);
+  assert.match(header, /id="move-beat-up"[^>]*>↑ Move beat up<\/button>/);
+  assert.match(header, /id="move-beat-down"[^>]*>↓ Move beat down<\/button>/);
+  assert.ok(!html.slice(0, editorStart).includes('id="move-beat-up"'));
+});
 
 function fakeAudio({ failedLoads = 0 } = {}) {
   const listeners = new Map();

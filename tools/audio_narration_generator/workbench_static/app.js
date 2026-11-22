@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -65,7 +65,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note"].forEach((id) => {
+  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -100,13 +100,29 @@ function updateDirtyState() {
   $("preview-draft").disabled = state.busy || !state.previewAvailable || !$("segment-text").value.trim();
   $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active");
   $("play-sapi-sequence").disabled = !state.sapiSequenceActive && (state.busy || !state.previewAvailable || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active"));
+  $("move-beat-up").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, -1);
+  $("move-beat-down").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, 1);
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
+}
+
+function visibleSegments() {
+  return (state.project?.segments || []).filter((segment) => segment.status === "active"
+    || (segment.status === "inactive" && state.showInactive)
+    || (segment.status === "deleted" && state.showDeleted));
+}
+
+function reorderTarget(id, direction) {
+  const visible = visibleSegments();
+  const index = visible.findIndex((segment) => segment.id === id);
+  if (index < 0) return null;
+  return visible[index + direction]?.id || null;
 }
 
 function renderSegmentList() {
   const list = $("segment-list");
   list.replaceChildren();
-  for (const segment of state.project.segments) {
+  const visible = visibleSegments();
+  for (const segment of visible) {
     const li = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
@@ -132,7 +148,7 @@ function renderSegmentList() {
     li.append(button);
     list.append(li);
   }
-  $("segment-count").textContent = String(state.project.segments.length);
+  $("segment-count").textContent = String(visible.length);
 }
 
 function renderVoiceStyles(segment) {
@@ -272,6 +288,8 @@ function renderEditor() {
   if (!segment) {
     editor.hidden = true;
     empty.hidden = false;
+    $("move-beat-up").disabled = true;
+    $("move-beat-down").disabled = true;
     return;
   }
   editor.hidden = false;
@@ -338,8 +356,8 @@ function followPlaybackBeat(segmentId) {
 function renderProject() {
   $("project-name").textContent = state.project.project;
   state.playbackManualSelection = true;
-  if (!state.selectedId || !state.project.segments.some((item) => item.id === state.selectedId)) {
-    state.selectedId = state.project.segments[0]?.id || null;
+  if (!visibleSegments().some((item) => item.id === state.selectedId)) {
+    state.selectedId = visibleSegments()[0]?.id || null;
   }
   renderSegmentList();
   renderEditor();
@@ -643,6 +661,27 @@ function selectSegment(id) {
   renderEditor();
 }
 
+async function moveSegment(id, direction) {
+  if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before moving a beat.");
+  const targetId = reorderTarget(id, direction);
+  if (!targetId) return;
+  $("assembly-audio").pause();
+  $("sapi-audio").pause();
+  try {
+    setBusy(true);
+    const result = await request("/api/segments/reorder", {
+      segment_id: id, target_id: targetId,
+      placement: direction < 0 ? "before" : "after", manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    state.selectedId = id;
+    renderProject();
+    toast("Beat order saved. The assembled narration needs a refresh.");
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
 async function saveSegment() {
   if (hasInvalidTtsInput()) return toast("Check the speech settings. NFE steps must be a whole number.");
   if (isNoteDirty()) return toast("Save the note before updating the segment.");
@@ -794,6 +833,16 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  for (const [id, key] of [["show-inactive", "showInactive"], ["show-deleted", "showDeleted"]]) {
+    $(id).addEventListener("change", (event) => {
+      if (isDirty() || isNoteDirty()) {
+        event.target.checked = state[key];
+        return toast("Save changes before changing beat visibility.");
+      }
+      state[key] = event.target.checked;
+      renderProject();
+    });
+  }
   const utilityTabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
   utilityTabs.forEach((tab, index) => {
     tab.addEventListener("click", () => activateUtilityTab(tab));
@@ -826,6 +875,8 @@ function bindEvents() {
     if (segment) { renderContext(segment); updateDirtyState(); }
   });
   $("save-segment").addEventListener("click", saveSegment);
+  $("move-beat-up").addEventListener("click", () => moveSegment(state.selectedId, -1));
+  $("move-beat-down").addEventListener("click", () => moveSegment(state.selectedId, 1));
   $("save-note").addEventListener("click", saveNote);
   $("ask-codex").addEventListener("click", askCodex);
   $("preview-draft").addEventListener("click", previewDraft);

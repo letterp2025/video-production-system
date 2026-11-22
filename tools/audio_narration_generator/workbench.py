@@ -254,6 +254,27 @@ class Project:
                 "assembly_current": assembly_current,
             }
 
+    def reorder_segment(self, segment_id: str, target_id: str, placement: str, expected_hash: str) -> dict[str, Any]:
+        if placement not in {"before", "after"} or segment_id == target_id:
+            raise WorkbenchError("Choose another beat and a valid move direction.")
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            with self.lock:
+                data, current_hash = self.read_manifest()
+                self._check_manifest_hash(expected_hash, current_hash)
+                index, segment = self.find_segment(data, segment_id)
+                self.find_segment(data, target_id)
+                data["segments"].pop(index)
+                target_index, _ = self.find_segment(data, target_id)
+                data["segments"].insert(target_index + (placement == "after"), segment)
+                self._validate_candidate(data)
+                self._write_manifest(data, current_hash)
+                return self.state_payload()
+        finally:
+            self.manifest_operation_lock.release()
+
+
     @staticmethod
     def _work_summary(work: Any, current_text: str) -> dict[str, Any]:
         if not isinstance(work, dict):
@@ -817,6 +838,11 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                         self._required_string(body, "manifest_hash"),
                     )
                     self._json(200, result)
+                elif self.path == "/api/segments/reorder":
+                    self._json(200, {"state": project.reorder_segment(
+                        self._required_string(body, "segment_id"), self._required_string(body, "target_id"),
+                        self._required_string(body, "placement"), self._required_string(body, "manifest_hash"),
+                    )})
                 elif self.path == "/api/note":
                     segment_id = self._required_string(body, "segment_id")
                     project.save_note(segment_id, self._string(body, "note"))
