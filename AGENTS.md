@@ -2,6 +2,12 @@
 
 These instructions apply to this public repository.
 
+## Local-only Codex notes
+
+- `tools/audio_narration_generator/docs/IGNORED_DOCS/` is intentionally Git-ignored and is for private, machine-specific Codex reference notes, such as local tool locations and workflows.
+- Read the relevant note there when a task depends on local tools. Keep personal paths, private workflow details, and other local-only information in that ignored folder; do not force-add or copy it into public files unless the user explicitly asks.
+- Preserve the ignore rule for this folder. The sibling `how_to_use.md` contains the local narration workbench launch command.
+
 ## Git commits
 
 - Commit completed task changes before handing work back to the user. Include the related source, tests, and documentation in the same logical commit.
