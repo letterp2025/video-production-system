@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -201,12 +201,22 @@ function renderTakes(segment) {
   const host = $("take-history-list");
   host.replaceChildren();
   const takes = segment.takes || [];
+  const featured = takes.find((take) => take.selected) || takes.at(-1);
+  const otherCount = Math.max(0, takes.length - 1);
+  const showOthers = state.showOtherTakesFor === segment.id;
+  const toggle = $("show-other-takes");
+  if (toggle) {
+    toggle.hidden = otherCount === 0;
+    toggle.textContent = showOthers ? "Hide other takes" : `Show ${otherCount} other take${otherCount === 1 ? "" : "s"}`;
+    toggle.setAttribute("aria-expanded", String(showOthers));
+  }
   $("take-history-summary").textContent = takes.length
-    ? `${takes.length} recorded take${takes.length === 1 ? "" : "s"}. Ratings and notes come from the manifest.`
+    ? `${takes.length} recorded take${takes.length === 1 ? "" : "s"}. ${featured?.selected ? "Selected take highlighted." : "Latest take shown."}`
     : "No F5-TTS takes recorded for this beat yet.";
   for (const take of takes) {
     const card = document.createElement("article");
     card.className = `take-card${take.selected ? " selected" : ""}`;
+    card.hidden = !showOthers && take !== featured;
     const heading = document.createElement("div");
     heading.className = "take-card-heading";
     const label = document.createElement("strong");
@@ -241,6 +251,28 @@ function renderTakes(segment) {
       unavailable.className = "take-unavailable";
       unavailable.textContent = take.pruned ? "Audio pruned; review kept in manifest." : "Audio file unavailable.";
       card.append(unavailable);
+    }
+    if (take.folder_path) {
+      const folder = document.createElement("div");
+      folder.className = "take-folder";
+      const label = document.createElement("span");
+      label.textContent = "Parent folder";
+      const path = document.createElement("code");
+      path.textContent = take.folder_path;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy path";
+      copy.setAttribute("aria-label", `Copy folder path for ${take.key}`);
+      copy.addEventListener("click", async () => {
+        try {
+          await window.navigator.clipboard.writeText(take.folder_path);
+          toast("Folder path copied.");
+        } catch {
+          toast("Select and copy the folder path shown above.");
+        }
+      });
+      folder.append(label, path, copy);
+      card.append(folder);
     }
     host.append(card);
   }
@@ -695,6 +727,7 @@ function selectSegment(id) {
   if (state.busy) return toast("Wait for the current action to finish.");
   if ((isDirty() || isNoteDirty()) && !window.confirm("Discard unsaved segment or note changes and switch segments?")) return;
   state.selectedId = id;
+  state.showOtherTakesFor = null;
   state.playbackManualSelection = true;
   state.sapiManualSelection = true;
   renderSegmentList();
@@ -908,6 +941,11 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  $("show-other-takes").addEventListener("click", () => {
+    state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
+    const segment = currentSegment();
+    if (segment) renderTakes(segment);
+  });
   $("insert-beat-form").addEventListener("submit", insertBeat);
   $("cancel-insert-beat").addEventListener("click", () => $("insert-beat-dialog").close());
   for (const [id, key] of [["show-inactive", "showInactive"], ["show-deleted", "showDeleted"]]) {

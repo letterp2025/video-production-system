@@ -572,7 +572,7 @@ class Project:
         paths: dict[str, str] = {}
         root = self.audio_root / "segments"
         if root.is_dir() and not root.is_symlink():
-            for folder in root.iterdir():
+            for folder in sorted(root.iterdir()):
                 if not folder.is_dir() or folder.is_symlink():
                     continue
                 for path in folder.iterdir():
@@ -593,7 +593,7 @@ class Project:
                     else:
                         continue
                     key = f"take-{int(match.group(1)):03d}"
-                    paths[key] = path.relative_to(self.audio_root).as_posix()
+                    paths.setdefault(key, path.relative_to(self.audio_root).as_posix())
         selected_key = None
         if selected:
             match = narration.TAKE_PATTERN.fullmatch(Path(selected).name)
@@ -624,6 +624,7 @@ class Project:
                 "available": key in paths,
                 "pruned": key in pruned and key not in paths,
                 "audio_url": f"/api/audio/take/{segment_id}/{key}" if key in paths else None,
+                "folder_path": str((self.audio_root / Path(paths[key]).parent).resolve()) if key in paths else None,
             }
             for key in sorted(keys, key=lambda value: int(value.removeprefix("take-")))
         ]
@@ -644,7 +645,7 @@ class Project:
             except WorkbenchError:
                 pass
         root = self.audio_root / "segments"
-        for folder in root.iterdir():
+        for folder in sorted(root.iterdir()):
             if not folder.is_dir() or folder.is_symlink():
                 continue
             for name in (f"{segment_id}_{take_key}.wav", f"{take_key}.wav"):
