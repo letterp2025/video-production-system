@@ -384,6 +384,59 @@ class Project:
             self.write_state(state)
             return {"manifest_hash": new_hash, "state": self.state_payload()}
 
+    def rate_take(self, segment_id: str, take_key: str, rating: str, expected_hash: str) -> dict[str, Any]:
+        if not narration.TAKE_REVIEW_PATTERN.fullmatch(take_key):
+            raise WorkbenchError("Choose a valid take number.")
+        if rating not in narration.TAKE_REVIEW_RATINGS:
+            raise WorkbenchError("Choose Favorite, Acceptable, or Rejected.")
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            with self.lock:
+                data, current_hash = self.read_manifest()
+                self._check_manifest_hash(expected_hash, current_hash)
+                _, segment = self.find_segment(data, segment_id)
+                take = next((item for item in self._segment_takes(data, segment) if item["key"] == take_key), None)
+                if take is None:
+                    raise WorkbenchError("Take not found in this project.", 404)
+
+                if take["pruned"] and not take["available"]:
+                    record = next((
+                        item for item in data.get("pruned_takes", [])
+                        if isinstance(item, dict)
+                        and item.get("segment_id") == segment_id
+                        and (match := narration.TAKE_PATTERN.fullmatch(Path(str(item.get("take", ""))).name))
+                        and f"take-{int(match.group(1)):03d}" == take_key
+                    ), None)
+                    if record is None:
+                        raise WorkbenchError("Take review record could not be found.", 404)
+                    review = record.get("take_review")
+                    review = dict(review) if isinstance(review, dict) else {}
+                    review["rating"] = rating
+                    record["take_review"] = review
+                else:
+                    reviews = segment.setdefault("take_reviews", {})
+                    review = reviews.get(take_key)
+                    if not isinstance(review, dict):
+                        review = {}
+                        for record in data.get("pruned_takes", []):
+                            if not isinstance(record, dict) or record.get("segment_id") != segment_id:
+                                continue
+                            match = narration.TAKE_PATTERN.fullmatch(Path(str(record.get("take", ""))).name)
+                            if match and f"take-{int(match.group(1)):03d}" == take_key:
+                                archived_review = record.get("take_review")
+                                if isinstance(archived_review, dict):
+                                    review = dict(archived_review)
+                                break
+                    review["rating"] = rating
+                    reviews[take_key] = review
+
+                self._validate_candidate(data)
+                new_hash = self._write_manifest(data, current_hash)
+                return {"manifest_hash": new_hash, "state": self.state_payload()}
+        finally:
+            self.manifest_operation_lock.release()
+
     def _validate_candidate(self, data: dict[str, Any]) -> None:
         temp_path: Path | None = None
         try:
@@ -976,6 +1029,13 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                         self._required_string(body, "manifest_hash"),
                     )
                     self._json(200, result)
+                elif self.path == "/api/take/rate":
+                    self._json(200, project.rate_take(
+                        self._required_string(body, "segment_id"),
+                        self._required_string(body, "take_key"),
+                        self._required_string(body, "rating"),
+                        self._required_string(body, "manifest_hash"),
+                    ))
                 elif self.path == "/api/segments/reorder":
                     self._json(200, {"state": project.reorder_segment(
                         self._required_string(body, "segment_id"), self._required_string(body, "target_id"),

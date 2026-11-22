@@ -63,15 +63,15 @@ Use a clearly named local work area such as `audio/.workbench/workbench_state.js
 - [x] Updated this guide, tool index, installation requirements, root overview, and Git ignore rules.
 - [x] Tested Codex CLI 0.171.0 live through the local HTTP suggestion and acceptance flow using disposable generic sample text; recorded the outcome in the repository validation record.
 
-The interface does not currently reorder segments; change array order in `narration_manifest.json`, then use assembly. It does not provide a project picker, persistent F5 model installation, pruning, Claude support, or a separate idea-outline stage.
+The interface supports reordering visible segments and writes that order to `narration_manifest.json`. It does not provide a project picker, persistent F5 model installation, pruning, Claude support, or a separate idea-outline stage.
 
 ## Follow-up review (2026-11-22)
 
 - **Tested and corrected:** The generation result remains visible after the page refreshes. Unsaved note text is marked and guarded from accidental loss when switching beats or running an action. Invalid numeric TTS inputs cannot silently clear an override, and unchanged numeric settings preserve their stored type so a title edit does not trigger a needless new take.
 - **Tested and corrected:** Manifest edits and suggestion acceptance return a conflict while workbench generation or assembly is running. The stereo review WAV wins when mono and stereo outputs have the same modification time. Save failures report a useful error and leave the previous manifest intact. The temporary work queue checks its size before replacing its saved file.
 - **Tested repository boundary:** The public and internal channel repositories now ignore project `audio/.workbench/` state. A project in any other Git repository needs the same ignore rule.
-- **Implemented, pending visual review:** The F5-TTS tab shows the selected take and keeps other discovered and manifest-recorded takes behind **Show other takes**. Each available take shows its rating, note, playable audio, and parent folder path for Explorer. Pruned records remain visible when expanded. Voice settings live in the same tab. The header owns SAPI preview and assembled F5-TTS playback.
-- **Proposed follow-up:** Allow selecting and rating takes in the interface, and offer a deliberate “generate another take” action for unchanged words. The existing generator and manifest already support these operations; the current take history is read-only.
+- **Implemented, pending visual review:** The F5-TTS tab shows the selected take and keeps other discovered and manifest-recorded takes behind **Show other takes**. Each take has a rating menu that saves Favorite, Acceptable, or Rejected to the manifest while preserving its note and current selection. Each available take shows its note, playable audio, and parent folder path for Explorer. Pruned records remain visible when expanded. Voice settings live in the same tab. The header owns SAPI preview and assembled F5-TTS playback.
+- **Proposed follow-up:** Allow selecting an older take in the interface and offer a deliberate “generate another take” action for unchanged words. The existing generator and manifest already support these operations.
 
 ## Completion criteria
 
@@ -80,6 +80,7 @@ The interface does not currently reorder segments; change array order in `narrat
 - A suggestion changes the manifest only after explicit acceptance. Rejected, pending, or stale suggestions do not alter spoken text or narration hashes.
 - Accepted text edits update the correct stable segment and existing generation behavior regenerates only affected narration; array-order changes are assembled by the existing CLI.
 - Segment order, IDs, status, voice style, TTS settings, selected takes, and tool-owned hashes remain consistent with the existing CLI.
+- Take ratings can be changed from the F5-TTS tab and are saved to the correct manifest review record without changing selected audio or assembly state.
 - The tracked AI guide documents field mapping and guardrails without containing project-specific or private material.
 - The app is loopback-only and confined to the selected project. AI requests show the context to be sent and preserve pending work if the provider is unavailable.
 - Codex integration is tested end to end. Claude support is not implemented.

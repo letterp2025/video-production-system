@@ -69,7 +69,7 @@ function setBusy(value) {
     const button = $(id);
     if (button) button.disabled = value;
   });
-  document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button").forEach((item) => { item.disabled = value; });
+  document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button, #take-history-list select").forEach((item) => { item.disabled = value; });
   updateDirtyState();
 }
 
@@ -229,10 +229,29 @@ function renderTakes(segment) {
       heading.append(badge);
     }
     card.append(heading);
-    const rating = document.createElement("p");
-    rating.className = "take-rating";
-    rating.textContent = `Rating: ${take.rating || "Not rated"}`;
-    card.append(rating);
+    const ratingLabel = document.createElement("label");
+    ratingLabel.className = "take-rating-field";
+    const ratingTitle = document.createElement("span");
+    ratingTitle.textContent = "Rating";
+    const rating = document.createElement("select");
+    rating.setAttribute("aria-label", `Rating for ${take.key}`);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = take.rating ? take.rating[0].toUpperCase() + take.rating.slice(1) : "Choose a rating";
+    placeholder.disabled = !take.rating;
+    placeholder.selected = !take.rating;
+    rating.append(placeholder);
+    for (const [value, label] of [["favorite", "Favorite"], ["acceptable", "Acceptable"], ["rejected", "Rejected"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      rating.append(option);
+    }
+    rating.value = take.rating || "";
+    rating.disabled = state.busy;
+    rating.addEventListener("change", () => rateTake(segment.id, take.key, rating.value, rating));
+    ratingLabel.append(ratingTitle, rating);
+    card.append(ratingLabel);
     if (take.note) {
       const note = document.createElement("p");
       note.className = "take-note";
@@ -275,6 +294,33 @@ function renderTakes(segment) {
       card.append(folder);
     }
     host.append(card);
+  }
+}
+
+async function rateTake(segmentId, takeKey, rating, control) {
+  if (state.busy) return;
+  if (isDirty() || isNoteDirty()) {
+    const take = currentSegment()?.takes?.find((item) => item.key === takeKey);
+    control.value = take?.rating || "";
+    return toast("Save segment edits and the note before rating a take.");
+  }
+  try {
+    setBusy(true);
+    const result = await request("/api/take/rate", {
+      segment_id: segmentId, take_key: takeKey, rating, manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    state.manifestHash = result.manifest_hash;
+    renderProject();
+    toast(`${takeKey} rating saved to the narration manifest.`);
+  } catch (error) {
+    const segment = state.project?.segments.find((item) => item.id === segmentId);
+    const take = segment?.takes?.find((item) => item.key === takeKey);
+    control.value = take?.rating || "";
+    toast(error.message);
+  } finally {
+    setBusy(false);
+    updateDirtyState();
   }
 }
 
