@@ -90,7 +90,6 @@ h1 { font-size: 30px; line-height: .95; }
 .insert-after-button { position: absolute; bottom: -12px; right: 0; z-index: 2; width: 27px; height: 27px; padding: 0; border: 1px solid var(--ink); background: var(--cyan); color: var(--ink); font-size: 20px; font-weight: 700; line-height: 1; opacity: 0; pointer-events: none; }
 .segment-list li:hover, .segment-list li:focus-within { z-index: 2; }
 .segment-list li:hover .insert-after-button, .segment-list li:focus-within .insert-after-button { opacity: 1; pointer-events: auto; }
-.segment-list li:hover .segment-link, .segment-list li:focus-within .segment-link { padding-right: 34px; }
 .insert-after-button:hover:not(:disabled) { background: var(--lime); }
 .insert-after-button:disabled { cursor: not-allowed; opacity: .35; }
 @media (hover: none) { .insert-after-button { bottom: 3px; opacity: 1; pointer-events: auto; } .segment-list li .segment-link { padding-right: 34px; } }

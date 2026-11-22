@@ -131,6 +131,8 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(self.manifest.read_bytes(), before)
 
     def test_insert_after_beat_creates_stable_unique_id_and_preserves_existing_takes(self):
+        self.data["selected_takes"]["opening-hook"] = "segments/opening-hook/take-001.wav"
+        self.write_manifest()
         previous = narration.generation_fingerprint(self.data["segments"][0], self.data, self.manifest)
         old_array_hash = narration.segments_array_sha256(self.data)
         digest = self.project.state_payload()["manifest_hash"]
@@ -140,6 +142,7 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual([segment["id"] for segment in saved["segments"]],
                          ["opening-hook", "next-beat-2", "next-beat"])
         self.assertEqual(saved["segments"][1]["text_sha256"], workbench.text_hash("A fresh line."))
+        self.assertEqual(saved["selected_takes"], self.data["selected_takes"])
         self.assertEqual(narration.generation_fingerprint(saved["segments"][0], saved, self.manifest), previous)
         self.assertNotEqual(narration.segments_array_sha256(saved), old_array_hash)
         self.assertEqual(result["state"]["segments"][1]["generation_state"], "take-needed")
