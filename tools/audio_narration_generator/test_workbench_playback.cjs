@@ -90,6 +90,41 @@ test("beat list hides inactive and deleted mock beats until each filter is enabl
   assert.equal(count.textContent, "3");
 });
 
+test("insert control beside a mock beat opens a draft after that beat", () => {
+  function node() {
+    return {
+      children: [], events: {},
+      replaceChildren() { this.children = []; },
+      append(...children) { this.children.push(...children); },
+      setAttribute() {},
+      addEventListener(type, callback) { this.events[type] = callback; },
+    };
+  }
+  const list = node();
+  const form = { resetCalled: false, reset() { this.resetCalled = true; } };
+  const dialog = { opened: false, showModal() { this.opened = true; } };
+  const title = { focused: false, focus() { this.focused = true; } };
+  const elements = {
+    "segment-list": list, "segment-count": node(),
+    "insert-beat-form": form, "insert-beat-dialog": dialog,
+    "insert-beat-title": title, "insert-after-label": node(), "insert-beat-error": node(),
+    "assembly-audio": { pause() {} }, "sapi-audio": { pause() {} },
+  };
+  const { state, renderSegmentList } = loadWorkbench(elements, { createElement: node });
+  state.project = { segments: [{ id: "first", position: 1, title: "First idea", status: "active" }] };
+  renderSegmentList();
+  const insert = list.children[0].children[1];
+  assert.equal(insert.className, "insert-after-button");
+  assert.equal(insert.textContent, "+");
+  assert.equal(insert.title, "Add a beat after First idea");
+  insert.events.click();
+  assert.equal(state.insertAfterId, "first");
+  assert.equal(elements["insert-after-label"].textContent, "After: First idea");
+  assert.equal(form.resetCalled, true);
+  assert.equal(dialog.opened, true);
+  assert.equal(title.focused, true);
+});
+
 function fakeAudio({ failedLoads = 0 } = {}) {
   const listeners = new Map();
   return {

@@ -89,6 +89,7 @@ python tools/audio_narration_generator/workbench.py `
 
 1. Select a beat from the list. Its position in the manifest array is its narration order.
    Use the up and down buttons beside the selected beat's status to move it among the beats currently shown. The manifest array is updated, so the next assembly uses the new order without regenerating unchanged takes. Inactive and deleted beats are hidden from the list by default; use **Show inactive** and **Show deleted** to find and edit them. Hiding a beat in the list does not change its manifest status.
+   Hover over a beat and press the **+** button beside it to add a new beat directly after it. Enter a title and spoken words, then choose active or inactive. Saving creates a stable ID from the title (with a numeric suffix if needed); later title edits do not change that ID. A new beat needs its own take when active, and the assembled narration becomes out of date.
 2. Edit its title or spoken words, choose `active`, `inactive`, or `deleted`, and optionally select a voice profile or adjust supported TTS overrides. Save the segment to update the manifest. Unknown manifest fields and IDs are preserved.
 3. Save an editorial note in the temporary work queue. To request wording help, press **Ask Codex**. The interface shows the exact segment and nearby text that will be sent.
 4. Review Codex's proposed wording beside the original. You can audition the proposal on supported systems. Accepting it is the only way a suggestion changes the manifest; dismissing it leaves the spoken words alone.

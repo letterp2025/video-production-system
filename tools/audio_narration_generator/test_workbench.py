@@ -130,6 +130,35 @@ class ProjectTest(unittest.TestCase):
             self.project.reorder_segment("opening-hook", "next-beat", "middle", digest)
         self.assertEqual(self.manifest.read_bytes(), before)
 
+    def test_insert_after_beat_creates_stable_unique_id_and_preserves_existing_takes(self):
+        previous = narration.generation_fingerprint(self.data["segments"][0], self.data, self.manifest)
+        old_array_hash = narration.segments_array_sha256(self.data)
+        digest = self.project.state_payload()["manifest_hash"]
+        result = self.project.insert_segment("opening-hook", "Next beat", "A fresh line.", "active", digest)
+        saved = json.loads(self.manifest.read_text(encoding="utf-8"))
+        self.assertEqual(result["segment_id"], "next-beat-2")
+        self.assertEqual([segment["id"] for segment in saved["segments"]],
+                         ["opening-hook", "next-beat-2", "next-beat"])
+        self.assertEqual(saved["segments"][1]["text_sha256"], workbench.text_hash("A fresh line."))
+        self.assertEqual(narration.generation_fingerprint(saved["segments"][0], saved, self.manifest), previous)
+        self.assertNotEqual(narration.segments_array_sha256(saved), old_array_hash)
+        self.assertEqual(result["state"]["segments"][1]["generation_state"], "take-needed")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "changed in another editor"):
+            self.project.insert_segment("opening-hook", "Another", "More words.", "active", digest)
+
+    def test_insert_rejects_invalid_input_without_writing(self):
+        before = self.manifest.read_bytes()
+        digest = self.project.state_payload()["manifest_hash"]
+        for after_id, title, spoken, status in [
+            ("missing", "New beat", "Words.", "active"),
+            ("opening-hook", "", "Words.", "active"),
+            ("opening-hook", "New beat", " ", "active"),
+            ("opening-hook", "New beat", "Words.", "deleted"),
+        ]:
+            with self.assertRaises(workbench.WorkbenchError):
+                self.project.insert_segment(after_id, title, spoken, status, digest)
+            self.assertEqual(self.manifest.read_bytes(), before)
+
     def test_title_edit_preserves_unchanged_tts_number_and_take_fingerprint(self):
         self.data["segments"][0]["tts"] = {"speed": 1.0}
         self.write_manifest()
@@ -333,6 +362,18 @@ class HttpTest(unittest.TestCase):
             payload = json.loads(response.read())
         self.assertEqual([item["id"] for item in payload["state"]["segments"]], ["beat-two", "beat-one"])
         self.assertEqual([item["id"] for item in json.loads(self.manifest.read_text(encoding="utf-8"))["segments"]], ["beat-two", "beat-one"])
+
+    def test_insert_route_adds_beat_after_requested_row(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        body = json.dumps({"after_id": "beat-one", "title": "New idea", "text": "A new line.",
+                           "status": "inactive", "manifest_hash": digest}).encode("utf-8")
+        request = Request(self.base + "/api/segments/insert", data=body,
+                          headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(request) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["segment_id"], "new-idea")
+        self.assertEqual([item["id"] for item in payload["state"]["segments"]], ["beat-one", "new-idea"])
+        self.assertEqual(payload["state"]["segments"][1]["status"], "inactive")
 
     def test_assembled_wav_supports_browser_byte_ranges(self):
         assembled = self.manifest.parent / "assembled"

@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -65,7 +65,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down"].forEach((id) => {
+  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -145,7 +145,15 @@ function renderSegmentList() {
     dot.className = `segment-status-dot${segment.generation_state === "take-needed" ? " needs" : ""}${segment.status === "inactive" ? " inactive" : ""}${segment.status === "deleted" ? " deleted" : ""}`;
     button.append(seq, copy, dot);
     button.addEventListener("click", () => selectSegment(segment.id));
-    li.append(button);
+    const insert = document.createElement("button");
+    insert.type = "button";
+    insert.className = "insert-after-button";
+    insert.textContent = "+";
+    insert.title = `Add a beat after ${segment.title || segment.id}`;
+    insert.setAttribute("aria-label", insert.title);
+    insert.disabled = state.busy;
+    insert.addEventListener("click", () => openInsertBeat(segment.id));
+    li.append(button, insert);
     list.append(li);
   }
   $("segment-count").textContent = String(visible.length);
@@ -661,6 +669,49 @@ function selectSegment(id) {
   renderEditor();
 }
 
+function openInsertBeat(afterId) {
+  if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before adding a beat.");
+  const segment = state.project?.segments.find((item) => item.id === afterId);
+  if (!segment) return toast("That beat is no longer available. Reload the manifest.");
+  $("assembly-audio").pause();
+  $("sapi-audio").pause();
+  state.insertAfterId = afterId;
+  $("insert-beat-form").reset();
+  $("insert-beat-error").hidden = true;
+  $("insert-after-label").textContent = `After: ${segment.title || segment.id}`;
+  $("insert-beat-dialog").showModal();
+  $("insert-beat-title").focus();
+}
+
+async function insertBeat(event) {
+  event.preventDefault();
+  if (state.busy || !state.insertAfterId) return;
+  const title = $("insert-beat-title").value.trim();
+  const text = $("insert-beat-text").value.trim();
+  const status = $("insert-beat-status").value;
+  try {
+    setBusy(true);
+    const result = await request("/api/segments/insert", {
+      after_id: state.insertAfterId, title, text, status, manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    if (status === "inactive") {
+      state.showInactive = true;
+      $("show-inactive").checked = true;
+    }
+    state.selectedId = result.segment_id;
+    $("insert-beat-dialog").close();
+    state.insertAfterId = null;
+    renderProject();
+    toast("Beat added. The assembled narration needs a refresh.");
+  } catch (error) {
+    $("insert-beat-error").textContent = error.message;
+    $("insert-beat-error").hidden = false;
+  }
+  finally { setBusy(false); }
+}
+
 async function moveSegment(id, direction) {
   if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before moving a beat.");
   const targetId = reorderTarget(id, direction);
@@ -833,6 +884,8 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  $("insert-beat-form").addEventListener("submit", insertBeat);
+  $("cancel-insert-beat").addEventListener("click", () => $("insert-beat-dialog").close());
   for (const [id, key] of [["show-inactive", "showInactive"], ["show-deleted", "showDeleted"]]) {
     $(id).addEventListener("change", (event) => {
       if (isDirty() || isNoteDirty()) {

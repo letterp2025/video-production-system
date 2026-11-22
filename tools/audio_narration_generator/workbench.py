@@ -10,6 +10,7 @@ import json
 import mimetypes
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import tempfile
 import threading
 import uuid
 import wave
+import unicodedata
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -271,6 +273,40 @@ class Project:
                 self._validate_candidate(data)
                 self._write_manifest(data, current_hash)
                 return self.state_payload()
+        finally:
+            self.manifest_operation_lock.release()
+
+    def insert_segment(self, after_id: str, title: str, text: str, status: str, expected_hash: str) -> dict[str, Any]:
+        if not isinstance(title, str) or not title.strip() or len(title) > MAX_TITLE_CHARS:
+            raise WorkbenchError(f"Title must be 1 to {MAX_TITLE_CHARS} characters.")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
+            raise WorkbenchError(f"Spoken text must be 1 to {MAX_TEXT_CHARS} characters.")
+        if status not in {"active", "inactive"}:
+            raise WorkbenchError("New beat status must be active or inactive.")
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            with self.lock:
+                data, current_hash = self.read_manifest()
+                self._check_manifest_hash(expected_hash, current_hash)
+                index, _ = self.find_segment(data, after_id)
+                normalized = unicodedata.normalize("NFKD", title.strip()).encode("ascii", "ignore").decode("ascii").lower()
+                base = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")[:32].rstrip("-") or "new-beat"
+                existing = {segment["id"] for segment in data["segments"]}
+                segment_id = base
+                number = 2
+                while segment_id in existing:
+                    suffix = f"-{number}"
+                    segment_id = f"{base[:32 - len(suffix)].rstrip('-')}{suffix}"
+                    number += 1
+                spoken = text.strip()
+                data["segments"].insert(index + 1, {
+                    "id": segment_id, "status": status, "title": title.strip(),
+                    "text": spoken, "text_sha256": text_hash(spoken),
+                })
+                self._validate_candidate(data)
+                self._write_manifest(data, current_hash)
+                return {"segment_id": segment_id, "state": self.state_payload()}
         finally:
             self.manifest_operation_lock.release()
 
@@ -843,6 +879,12 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                         self._required_string(body, "segment_id"), self._required_string(body, "target_id"),
                         self._required_string(body, "placement"), self._required_string(body, "manifest_hash"),
                     )})
+                elif self.path == "/api/segments/insert":
+                    self._json(200, project.insert_segment(
+                        self._required_string(body, "after_id"), self._required_string(body, "title"),
+                        self._required_string(body, "text"), self._required_string(body, "status"),
+                        self._required_string(body, "manifest_hash"),
+                    ))
                 elif self.path == "/api/note":
                     segment_id = self._required_string(body, "segment_id")
                     project.save_note(segment_id, self._string(body, "note"))

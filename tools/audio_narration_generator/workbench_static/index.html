@@ -181,5 +181,26 @@
     <span>Local only · Changes go to the selected narration manifest after review</span>
     <button id="reload-project" class="text-button" type="button">Reload manifest</button>
   </footer>
+  <dialog id="insert-beat-dialog" class="insert-beat-dialog" aria-labelledby="insert-beat-heading">
+    <form id="insert-beat-form">
+      <p class="section-kicker">NEW NARRATION BEAT</p>
+      <h2 id="insert-beat-heading">Add a beat</h2>
+      <p id="insert-after-label" class="insert-after-label"></p>
+      <label for="insert-beat-title">Segment title</label>
+      <input id="insert-beat-title" name="title" maxlength="160" required autocomplete="off">
+      <label for="insert-beat-text">Spoken words</label>
+      <textarea id="insert-beat-text" name="text" maxlength="24000" required></textarea>
+      <label for="insert-beat-status">Status</label>
+      <select id="insert-beat-status" name="status">
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+      <p id="insert-beat-error" class="insert-beat-error" role="alert" hidden></p>
+      <div class="insert-beat-actions">
+        <button id="cancel-insert-beat" class="button button-outline" type="button">Cancel</button>
+        <button id="save-insert-beat" class="button button-ink" type="submit">Add beat after</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>
