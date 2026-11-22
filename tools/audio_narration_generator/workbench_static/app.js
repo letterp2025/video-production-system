@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, previewAvailable: false };
+const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -23,6 +23,19 @@ async function request(path, body) {
 function escapeText(value) { return String(value ?? ""); }
 function currentSegment() { return state.project?.segments.find((item) => item.id === state.selectedId); }
 function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
+
+function activateUtilityTab(tab, moveFocus = false) {
+  const tabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
+  for (const item of tabs) {
+    const active = item === tab;
+    item.setAttribute("aria-selected", String(active));
+    item.tabIndex = active ? 0 : -1;
+    item.classList.toggle("active", active);
+    const panel = $(item.getAttribute("aria-controls"));
+    if (panel) panel.hidden = !active;
+  }
+  if (moveFocus) tab.focus();
+}
 
 function snapshot() {
   return {
@@ -52,7 +65,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note"].forEach((id) => {
+  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -85,6 +98,8 @@ function updateDirtyState() {
   $("generate-take").disabled = state.busy || dirty || currentSegment()?.status !== "active";
   $("assemble-audio").disabled = state.busy || dirty;
   $("preview-draft").disabled = state.busy || !state.previewAvailable || !$("segment-text").value.trim();
+  $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active");
+  $("play-sapi-sequence").disabled = !state.sapiSequenceActive && (state.busy || !state.previewAvailable || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active"));
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
 }
 
@@ -95,8 +110,10 @@ function renderSegmentList() {
     const li = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `segment-link${segment.id === state.selectedId ? " selected" : ""}`;
-    button.setAttribute("aria-current", segment.id === state.selectedId ? "true" : "false");
+    button.disabled = state.busy;
+    const speaking = (state.playbackActive || state.sapiSequenceActive) && segment.id === state.playbackFollowId;
+    button.className = `segment-link${segment.id === state.selectedId ? " selected" : ""}${speaking ? " is-speaking" : ""}`;
+    button.setAttribute("aria-current", speaking ? "step" : segment.id === state.selectedId ? "true" : "false");
     const seq = document.createElement("span");
     seq.className = "segment-seq";
     seq.textContent = String(segment.position).padStart(2, "0");
@@ -232,6 +249,22 @@ function renderContext(segment) {
   $("request-context").textContent = entries.join("\n\n────────\n\n");
 }
 
+function setAssemblyAudioSource(audio, url, name) {
+  if (url) {
+    if (state.assemblySourceName !== name || audio.getAttribute("src") !== url) {
+      audio.src = url;
+      state.assemblySourceName = name;
+      state.playbackResumeTime = null;
+      state.playbackManualSelection = true;
+    }
+  } else if (state.assemblySourceName !== null || audio.hasAttribute("src")) {
+    audio.removeAttribute("src");
+    audio.load();
+    state.assemblySourceName = null;
+    state.playbackResumeTime = null;
+  }
+}
+
 function renderEditor() {
   const segment = currentSegment();
   const editor = $("editor");
@@ -268,25 +301,327 @@ function renderEditor() {
   }
   if (state.project.assembled_audio_url) {
     $("assembly-audio-row").hidden = false;
-    $("assembly-audio").src = state.project.assembled_audio_url;
+    setAssemblyAudioSource($("assembly-audio"), state.project.assembled_audio_url, state.project.assembled_audio_name);
     const freshness = state.project.assembly_current ? "Current" : "Out of date";
     $("assembly-name").textContent = `${freshness} · ${state.project.assembled_audio_name || "latest WAV"}`;
   } else {
     $("assembly-audio-row").hidden = true;
-    $("assembly-audio").removeAttribute("src");
-    $("assembly-audio").load();
+    setAssemblyAudioSource($("assembly-audio"), null, null);
   }
   $("tool-output").hidden = true;
   updateDirtyState();
 }
 
+function followPlaybackBeat(segmentId) {
+  if (!segmentId || segmentId === state.selectedId) return;
+  const segment = state.project?.segments.find((item) => item.id === segmentId);
+  if (!segment) return;
+  state.selectedId = segmentId;
+  renderSegmentList();
+  $("segment-position").textContent = `BEAT ${String(segment.position).padStart(2, "0")}`;
+  $("segment-id").textContent = segment.id;
+  $("segment-title").value = segment.title || segment.id;
+  $("segment-status").value = segment.status;
+  $("segment-text").value = segment.text;
+  $("word-count").textContent = `${countWords(segment.text)} words`;
+  document.querySelector("#segment-list button[aria-current='step']")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  $("editorial-note").value = segment.work?.note || "";
+  state.noteBaseline = $("editorial-note").value;
+  renderVoiceStyles(segment);
+  renderTts(segment);
+  renderSuggestions(segment);
+  renderContext(segment);
+  state.baseline = snapshotKey(snapshot());
+  updateDirtyState();
+}
+
 function renderProject() {
   $("project-name").textContent = state.project.project;
+  state.playbackManualSelection = true;
   if (!state.selectedId || !state.project.segments.some((item) => item.id === state.selectedId)) {
     state.selectedId = state.project.segments[0]?.id || null;
   }
   renderSegmentList();
   renderEditor();
+}
+
+function setPreviewButtonMode(mode) {
+  const button = $("play-active-narration");
+  const icon = $("play-active-icon");
+  button.classList.toggle("is-playing", mode === "playing");
+  button.classList.toggle("is-building", mode === "building");
+  $("play-active-label").textContent = mode === "playing" ? "Pause F5-TTS" : mode === "building" ? "Building F5-TTS..." : "Build + play F5-TTS";
+  if (mode === "playing") {
+    icon.textContent = "Ⅱ";
+    button.setAttribute("aria-label", "Pause active narration preview");
+    button.title = "Pause active narration preview";
+  } else if (mode === "building") {
+    icon.textContent = "…";
+    button.setAttribute("aria-label", "Preparing active narration preview");
+    button.title = "Preparing stale takes and assembling active beats";
+  } else {
+    icon.textContent = "▶";
+    button.setAttribute("aria-label", "Build and play active narration");
+    button.title = "Build stale takes, assemble if needed, and play active beats";
+  }
+}
+
+function setPreviewStatus(message = "List order is spoken order. Select a beat to edit it.") {
+  $("sequence-help").textContent = message;
+  $("playback-status").textContent = message === "List order is spoken order. Select a beat to edit it." ? "" : message;
+}
+
+function waitForAudioMetadata(audio, label) {
+  if (audio.error) return Promise.reject(new Error(`The ${label} audio could not be loaded. Try playback again.`));
+  if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      audio.removeEventListener("loadedmetadata", ready);
+      audio.removeEventListener("error", failed);
+    };
+    const ready = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error(`The ${label} audio could not be loaded. Try playback again.`)); };
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`The ${label} audio did not load. Try playback again.`));
+    }, 15000);
+    audio.addEventListener("loadedmetadata", ready);
+    audio.addEventListener("error", failed);
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) ready();
+    else if (audio.error) failed();
+  });
+}
+
+async function loadAudioMetadata(audio, label) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA && !audio.error) return;
+    if (attempt > 0 || audio.error || audio.networkState !== HTMLMediaElement.NETWORK_LOADING) audio.load();
+    try {
+      await waitForAudioMetadata(audio, label);
+      return;
+    } catch (error) {
+      if (attempt === 1) throw error;
+    }
+  }
+}
+
+function rememberAudioPosition(audio, key) {
+  if (!audio.error && Number.isFinite(audio.currentTime) && audio.currentTime >= 0) {
+    state[key] = audio.currentTime;
+  }
+}
+
+function playbackStartTime(audio, timeline, manualSelection, resumeTime) {
+  const selected = timeline.find((beat) => beat.id === state.selectedId);
+  if (manualSelection || audio.ended) {
+    if (!selected) throw new Error("Select an active beat to start playback.");
+    return selected.start;
+  }
+  if (audio.error && Number.isFinite(audio.currentTime) && audio.currentTime > 0) return audio.currentTime;
+  if (Number.isFinite(resumeTime) && resumeTime >= 0) return resumeTime;
+  if (Number.isFinite(audio.currentTime) && audio.currentTime > 0) return audio.currentTime;
+  if (!selected) throw new Error("Select an active beat to start playback.");
+  return selected.start;
+}
+
+async function playSapiSequence() {
+  const audio = $("sapi-audio");
+  if (state.sapiStarting) return;
+  if (!audio.paused && !audio.error) return audio.pause();
+  if (state.busy || !state.previewAvailable) return;
+  if (isDirty() || isNoteDirty()) return toast("Save your segment and note before previewing the sequence.");
+  const active = state.project?.segments.filter((segment) => segment.status === "active") || [];
+  if (!active.length) return toast("Add an active beat before previewing.");
+  $("assembly-audio").pause();
+  if (!state.sapiTimeline.length || state.sapiManifestHash !== state.project.manifest_hash) {
+    setBusy(true);
+    $("play-sapi-label").textContent = "Building SAPI preview...";
+    setPreviewStatus("Rendering a temporary SAPI preview. This is usually quick.");
+    try {
+      const result = await request("/api/preview/render", {});
+      if (!Array.isArray(result.beats) || !result.beats.length || !result.url) {
+        throw new Error("SAPI returned no playable beats.");
+      }
+      state.sapiTimeline = result.beats;
+      state.sapiManifestHash = state.project.manifest_hash;
+      state.sapiStarted = false;
+      state.sapiResumeTime = null;
+      audio.src = result.url;
+      audio.load();
+    } catch (error) {
+      state.sapiTimeline = [];
+      state.sapiManifestHash = null;
+      setPreviewStatus(`SAPI preview failed: ${error.message}`);
+      toast(error.message);
+      return;
+    } finally {
+      setBusy(false);
+      $("play-sapi-label").textContent = "▶ Preview SAPI fast";
+    }
+  }
+  const requestedId = state.selectedId;
+  state.sapiStarting = true;
+  try {
+    const startTime = playbackStartTime(audio, state.sapiTimeline,
+      state.sapiManualSelection || !state.sapiStarted, state.sapiResumeTime);
+    state.sapiResumeTime = startTime;
+    await loadAudioMetadata(audio, "SAPI preview");
+    if (state.selectedId !== requestedId) return;
+    audio.currentTime = startTime;
+    await audio.play();
+    state.sapiManualSelection = false;
+    state.sapiStarted = true;
+  } catch (error) {
+    audio.pause();
+    state.sapiSequenceActive = false;
+    const message = error.name === "NotAllowedError"
+      ? "SAPI preview is ready. Click Preview SAPI fast again to start playback."
+      : `SAPI playback failed: ${error.message || "Unknown audio error."}`;
+    setPreviewStatus(message);
+    toast(message);
+  } finally {
+    state.sapiStarting = false;
+  }
+}
+
+function syncSapiBeat() {
+  const audio = $("sapi-audio");
+  if (!state.sapiStarting && !audio.paused) rememberAudioPosition(audio, "sapiResumeTime");
+  if (state.sapiStarting || !state.sapiSequenceActive || audio.paused || !state.sapiTimeline.length) return;
+  let beat = state.sapiTimeline[0];
+  for (const item of state.sapiTimeline) {
+    if (audio.currentTime < item.start) break;
+    beat = item;
+  }
+  if (beat.id === state.playbackFollowId) return;
+  state.playbackFollowId = beat.id;
+  followPlaybackBeat(beat.id);
+  renderSegmentList();
+  document.querySelector("#segment-list button[aria-current='step']")?.scrollIntoView({ block: "nearest" });
+  setPreviewStatus(`SAPI preview: beat ${state.sapiTimeline.indexOf(beat) + 1} of ${state.sapiTimeline.length}.`);
+}
+
+function buildPlaybackTimeline() {
+  const active = state.project.segments.filter((segment) => segment.status === "active");
+  if (!active.length || active.some((segment) => !Number.isFinite(segment.duration_seconds) || segment.duration_seconds <= 0)) return [];
+  const pause = Math.max(0, Number(state.project.pause_ms) || 0) / 1000;
+  let cursor = 0;
+  return active.map((segment, index) => {
+    const beat = { id: segment.id, start: cursor, end: cursor + segment.duration_seconds };
+    cursor = beat.end + (index < active.length - 1 ? pause : 0);
+    return beat;
+  });
+}
+
+function syncPlaybackBeat() {
+  const audio = $("assembly-audio");
+  if (!state.playbackStarting && !audio.paused) rememberAudioPosition(audio, "playbackResumeTime");
+  if (state.playbackStarting || !state.playbackActive || !state.playbackTimeline.length) return;
+  let beat = null;
+  for (const item of state.playbackTimeline) {
+    if (audio.currentTime < item.start) break;
+    beat = item;
+  }
+  if (!beat || beat.id === state.playbackFollowId) return;
+  state.playbackFollowId = beat.id;
+  followPlaybackBeat(beat.id);
+  renderSegmentList();
+}
+
+async function playActiveNarration() {
+  const audio = $("assembly-audio");
+  if (state.playbackStarting) return;
+  if (!audio.paused && !audio.error) {
+    audio.pause();
+    return;
+  }
+  if (state.busy) return;
+  $("sapi-audio").pause();
+  if (isDirty() || isNoteDirty()) return toast("Save your segment and note before playing the active narration.");
+
+  let active = state.project?.segments.filter((segment) => segment.status === "active") || [];
+  if (!active.length) return toast("Add an active beat before creating a narration preview.");
+  let needsTakes = active.some((segment) => segment.generation_state !== "ready");
+  let needsAssembly = !state.project.assembly_current || !state.project.assembled_audio_url;
+  let lastResult = null;
+
+  if (needsTakes || needsAssembly) {
+    setBusy(true);
+    setPreviewButtonMode("building");
+    try {
+      if (needsTakes) {
+        const staleCount = active.filter((segment) => segment.generation_state !== "ready").length;
+        setPreviewStatus(`Generating ${staleCount} missing or changed beat take${staleCount === 1 ? "" : "s"}. This may take a while.`);
+        lastResult = await request("/api/generate", {});
+        if (lastResult.state) {
+          state.project = lastResult.state;
+          state.manifestHash = lastResult.state.manifest_hash;
+          renderProject();
+        }
+        showOutput(lastResult.ok ? "Take generation complete" : "Take generation failed", lastResult);
+        if (!lastResult.ok) throw new Error("Some narration takes could not be generated. See Listen back for details.");
+        active = state.project.segments.filter((segment) => segment.status === "active");
+        if (active.some((segment) => segment.generation_state !== "ready")) {
+          throw new Error("Some active beats still need a valid take. See Listen back for details.");
+        }
+      }
+
+      needsAssembly = !state.project.assembly_current || !state.project.assembled_audio_url;
+      if (needsAssembly) {
+        setPreviewStatus("Assembling the active beats for playback.");
+        lastResult = await request("/api/assemble", {});
+        if (lastResult.state) {
+          state.project = lastResult.state;
+          state.manifestHash = lastResult.state.manifest_hash;
+          renderProject();
+        }
+        showOutput(lastResult.ok ? "Narration assembly complete" : "Narration assembly failed", lastResult);
+        if (!lastResult.ok) throw new Error("The active beats could not be assembled. See Listen back for details.");
+      }
+      if (!state.project.assembly_current || !state.project.assembled_audio_url) {
+        throw new Error("The narration is still out of date. See Listen back for details.");
+      }
+    } catch (error) {
+      showOutput("Preview preparation failed", { output: lastResult?.output, error: error.message });
+      activateUtilityTab($("tab-listen"));
+      setPreviewStatus("Preview could not be prepared. See Listen back for details.");
+      toast(error.message);
+      return;
+    } finally {
+      setBusy(false);
+      setPreviewButtonMode("idle");
+    }
+  }
+
+  if (!state.project.assembled_audio_url || !state.project.assembly_current) {
+    return toast("The active narration is not ready to play yet.");
+  }
+  state.playbackTimeline = buildPlaybackTimeline();
+  state.playbackFollowId = null;
+  state.playbackStarting = true;
+  const requestedId = state.selectedId;
+  try {
+    if (!state.playbackTimeline.length) throw new Error("Could not read the beat timing from the selected takes.");
+    const startTime = playbackStartTime(audio, state.playbackTimeline,
+      state.playbackManualSelection, state.playbackResumeTime);
+    state.playbackResumeTime = startTime;
+    await loadAudioMetadata(audio, "F5-TTS narration");
+    if (state.selectedId !== requestedId) return;
+    audio.currentTime = startTime;
+    await audio.play();
+    state.playbackManualSelection = false;
+  } catch (error) {
+    audio.pause();
+    state.playbackActive = false;
+    const message = error.name === "NotAllowedError"
+      ? "Narration is ready. Click Build + play F5-TTS again to start playback."
+      : `F5-TTS playback failed: ${error.message || "Unknown audio error."}`;
+    setPreviewStatus(message);
+    toast(message);
+  } finally {
+    state.playbackStarting = false;
+  }
 }
 
 async function refreshState() {
@@ -297,9 +632,13 @@ async function refreshState() {
 }
 
 function selectSegment(id) {
+  if (state.playbackActive) $("assembly-audio").pause();
+  if (state.sapiSequenceActive) $("sapi-audio").pause();
   if (state.busy) return toast("Wait for the current action to finish.");
   if ((isDirty() || isNoteDirty()) && !window.confirm("Discard unsaved segment or note changes and switch segments?")) return;
   state.selectedId = id;
+  state.playbackManualSelection = true;
+  state.sapiManualSelection = true;
   renderSegmentList();
   renderEditor();
 }
@@ -387,6 +726,7 @@ async function previewDraft() {
 
 async function auditionText(text, label = "Suggestion preview") {
   try {
+    if (state.playbackActive) $("assembly-audio").pause();
     setBusy(true);
     const result = await request("/api/preview", { text });
     if (result.ok) toast(result.message || `${label} finished.`);
@@ -399,6 +739,7 @@ async function runGeneration(assemble) {
   if (isDirty()) return toast("Save segment changes before running narration tools.");
   if (isNoteDirty()) return toast("Save the note before running narration tools.");
   try {
+    if (state.playbackActive) $("assembly-audio").pause();
     setBusy(true);
     showOutput(assemble ? "Assembling active narration…" : "Generating missing or changed takes…", { output: "This can take a while. Leave this tab open." });
     const result = await request(assemble ? "/api/assemble" : "/api/generate", {});
@@ -418,8 +759,9 @@ async function checkProvider() {
   try {
     const result = await request("/api/provider");
     state.previewAvailable = Boolean(result.preview?.available);
+    updateDirtyState();
     $("preview-note").textContent = state.previewAvailable
-      ? "Quick preview uses the computer's local SAPI voice. It does not create a take or audio file."
+      ? "Single-beat quick preview speaks directly. Sequence preview makes a temporary WAV outside the project; neither creates an F5 take."
       : "Quick preview is unavailable on this system. No alternate engine or audio-file fallback is used.";
     updateDirtyState();
     if (currentSegment()) renderSuggestions(currentSegment());
@@ -452,12 +794,34 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  const utilityTabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
+  utilityTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => activateUtilityTab(tab));
+    tab.addEventListener("keydown", (event) => {
+      let nextIndex = index;
+      if (event.key === "ArrowRight") nextIndex = (utilityTabs.indexOf(tab) + 1) % utilityTabs.length;
+      else if (event.key === "ArrowLeft") nextIndex = (utilityTabs.indexOf(tab) - 1 + utilityTabs.length) % utilityTabs.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = utilityTabs.length - 1;
+      else return;
+      event.preventDefault();
+      activateUtilityTab(utilityTabs[nextIndex], true);
+    });
+  });
   ["segment-title", "segment-status", "voice-style", "segment-text"].forEach((id) => $(id).addEventListener("input", () => {
+    if (state.playbackActive) $("assembly-audio").pause();
+    if (state.sapiSequenceActive) $("sapi-audio").pause();
     if (id === "segment-text") $("word-count").textContent = `${countWords($(id).value)} words`;
     updateDirtyState();
   }));
-  $("tts-fields").addEventListener("input", updateDirtyState);
+  $("tts-fields").addEventListener("input", () => {
+    if (state.playbackActive) $("assembly-audio").pause();
+    if (state.sapiSequenceActive) $("sapi-audio").pause();
+    updateDirtyState();
+  });
   $("editorial-note").addEventListener("input", () => {
+    if (state.playbackActive) $("assembly-audio").pause();
+    if (state.sapiSequenceActive) $("sapi-audio").pause();
     const segment = currentSegment();
     if (segment) { renderContext(segment); updateDirtyState(); }
   });
@@ -465,8 +829,69 @@ function bindEvents() {
   $("save-note").addEventListener("click", saveNote);
   $("ask-codex").addEventListener("click", askCodex);
   $("preview-draft").addEventListener("click", previewDraft);
+  $("play-active-narration").addEventListener("click", playActiveNarration);
+  $("play-sapi-sequence").addEventListener("click", playSapiSequence);
+  const sapiAudio = $("sapi-audio");
+  sapiAudio.addEventListener("play", () => {
+    state.sapiSequenceActive = true;
+    $("play-sapi-label").textContent = "Ⅱ Pause SAPI preview";
+    syncSapiBeat();
+    updateDirtyState();
+  });
+  sapiAudio.addEventListener("pause", () => {
+    if (!state.sapiStarting) rememberAudioPosition(sapiAudio, "sapiResumeTime");
+    state.sapiSequenceActive = false;
+    state.playbackFollowId = null;
+    $("play-sapi-label").textContent = "▶ Resume SAPI preview";
+    if (!sapiAudio.ended) setPreviewStatus("SAPI preview paused. Select a beat to start there, or resume.");
+    renderSegmentList();
+    updateDirtyState();
+  });
+  sapiAudio.addEventListener("ended", () => {
+    state.sapiSequenceActive = false;
+    state.playbackFollowId = null;
+    $("play-sapi-label").textContent = "▶ Preview SAPI fast";
+    setPreviewStatus("SAPI preview finished.");
+    renderSegmentList();
+    updateDirtyState();
+  });
+  sapiAudio.addEventListener("timeupdate", syncSapiBeat);
+  $("preview-volume").addEventListener("input", (event) => {
+    const volume = Number(event.target.value) / 100;
+    sapiAudio.volume = volume;
+    $("assembly-audio").volume = volume;
+    $("preview-volume-label").textContent = `Volume ${event.target.value}%`;
+  });
   $("generate-take").addEventListener("click", () => runGeneration(false));
   $("assemble-audio").addEventListener("click", () => runGeneration(true));
+  const narrationAudio = $("assembly-audio");
+  narrationAudio.addEventListener("play", () => {
+    state.playbackActive = true;
+    setPreviewButtonMode("playing");
+    setPreviewStatus("Playing active narration. The selected beat follows the audio.");
+    syncPlaybackBeat();
+    renderSegmentList();
+    updateDirtyState();
+  });
+  narrationAudio.addEventListener("pause", () => {
+    if (!state.playbackStarting) rememberAudioPosition(narrationAudio, "playbackResumeTime");
+    if (narrationAudio.ended) return;
+    state.playbackActive = false;
+    state.playbackFollowId = null;
+    setPreviewButtonMode("idle");
+    setPreviewStatus();
+    renderSegmentList();
+    updateDirtyState();
+  });
+  narrationAudio.addEventListener("ended", () => {
+    state.playbackActive = false;
+    state.playbackFollowId = null;
+    setPreviewButtonMode("idle");
+    setPreviewStatus();
+    renderSegmentList();
+    updateDirtyState();
+  });
+  narrationAudio.addEventListener("timeupdate", syncPlaybackBeat);
   $("clear-resolved").addEventListener("click", clearResolved);
   $("reload-project").addEventListener("click", async () => {
     if (state.busy) return;

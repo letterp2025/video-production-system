@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import uuid
+import wave
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -198,6 +199,8 @@ class Project:
                 segment_id = segment["id"]
                 selected = data["selected_takes"].get(segment_id)
                 status = segment.get("status", "active")
+                issue = None
+                duration_seconds = None
                 if status != "active":
                     generation_state = "not-included" if status == "inactive" else "retired"
                 elif not selected:
@@ -208,6 +211,14 @@ class Project:
                     except ValueError:
                         issue = "selected take path is outside the project audio folder"
                     generation_state = "ready" if issue is None else "take-needed"
+                    if generation_state == "ready":
+                        try:
+                            with wave.open(str(self._safe_audio_path(selected)), "rb") as audio:
+                                sample_rate = audio.getframerate()
+                                if sample_rate > 0:
+                                    duration_seconds = audio.getnframes() / sample_rate
+                        except (EOFError, OSError, wave.Error, WorkbenchError):
+                            duration_seconds = None
                 work = state["segments"].get(segment_id, {})
                 segments.append({
                     "position": index + 1,
@@ -219,6 +230,7 @@ class Project:
                     "tts": segment.get("tts", {}),
                     "generation_state": generation_state,
                     "generation_detail": issue if status == "active" and selected and issue else None,
+                    "duration_seconds": duration_seconds,
                     "has_selected_take": bool(selected),
                     "audio_url": f"/api/audio/segment/{segment_id}" if selected else None,
                     "work": self._work_summary(work, segment["text"]),
@@ -235,6 +247,7 @@ class Project:
                 "manifest_hash": manifest_digest,
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
                 "tts_defaults": {key: value for key, value in data["settings"].items() if key in MAX_TTS_VALUES},
+                "pause_ms": data["settings"].get("pause_ms", 350),
                 "segments": segments,
                 "assembled_audio_url": "/api/audio/assembly" if assembled else None,
                 "assembled_audio_name": assembled.name if assembled else None,
@@ -631,6 +644,13 @@ def run_tool(command: list[str], timeout: int, input_text: str | None = None) ->
 
 
 def create_handler(project: Project, codex_path: str | None, python_path: str) -> type[BaseHTTPRequestHandler]:
+    sequence_run_lock = threading.Lock()
+    sequence_state_lock = threading.Lock()
+    sequence_process: subprocess.Popen[str] | None = None
+    sapi_render_lock = threading.Lock()
+    sapi_temp: tempfile.TemporaryDirectory[str] | None = None
+    sapi_cache: dict[str, Any] = {}
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "NarrationWorkbench/1.0"
         sys_version = ""
@@ -728,6 +748,10 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._send_file(project._selected_audio(segment_id), "audio/wav", allow_range=True)
                 elif self.path == "/api/audio/assembly":
                     self._send_file(project.assembly_audio_path(), "audio/wav", allow_range=True)
+                elif self.path.split("?", 1)[0] == "/api/audio/sapi-preview":
+                    if not sapi_cache.get("path"):
+                        raise WorkbenchError("Build the SAPI preview first.", 404)
+                    self._send_file(sapi_cache["path"], "audio/wav", allow_range=True)
                 else:
                     self._json(404, {"error": "Not found."})
             except WorkbenchError as exc:
@@ -824,6 +848,16 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._json(200, {"removed_suggestions": project.clear_resolved(), "state": project.state_payload()})
                 elif self.path == "/api/preview":
                     self._json(200, self._preview(self._string(body, "text")))
+                elif self.path == "/api/preview/sequence":
+                    self._preview_sequence(body.get("texts"))
+                elif self.path == "/api/preview/stop":
+                    with sequence_state_lock:
+                        process = sequence_process
+                        if process is not None and process.poll() is None:
+                            process.terminate()
+                    self._json(200, {"ok": True})
+                elif self.path == "/api/preview/render":
+                    self._json(200, self._render_sapi_preview())
                 elif self.path == "/api/generate":
                     self._json(200, self._run_generation(assemble=False))
                 elif self.path == "/api/assemble":
@@ -865,6 +899,146 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 message = result["error"] or result["output"] or "Transient preview failed."
                 return {"ok": False, "error": message, "unsupported": "unavailable" in message.lower() or platform.system() != "Windows"}
             return {"ok": True, "message": result["output"] or "Preview finished."}
+
+        def _render_sapi_preview(self) -> dict[str, Any]:
+            nonlocal sapi_temp
+            if platform.system() != "Windows":
+                raise WorkbenchError("SAPI preview is available only on Windows.", 503)
+            executable = shutil.which("powershell.exe") or shutil.which("powershell")
+            if not executable:
+                raise WorkbenchError("Windows PowerShell was not found.", 503)
+            if not sapi_render_lock.acquire(blocking=False):
+                raise WorkbenchError("A SAPI preview is already being rendered.", 409)
+            try:
+                data, _ = project.read_manifest()
+                active = narration.active_segments(data)
+                if not active or len(active) > 500:
+                    raise WorkbenchError("SAPI preview needs 1 to 500 active beats.")
+                texts = [segment["text"] for segment in active]
+                if sum(len(text) for text in texts) > 250_000:
+                    raise WorkbenchError("The active narration is too long for a quick SAPI preview.")
+                pause_ms = int(data["settings"].get("pause_ms", 350))
+                digest = text_hash(json.dumps([[(segment["id"], segment["text"]) for segment in active], pause_ms], ensure_ascii=False))
+                if sapi_cache.get("digest") == digest and sapi_cache["path"].is_file():
+                    return {"ok": True, "url": f"/api/audio/sapi-preview?v={digest}", "beats": sapi_cache["beats"], "cached": True}
+
+                if sapi_temp is None:
+                    sapi_temp = tempfile.TemporaryDirectory(prefix="vps-sapi-preview-")
+                with tempfile.TemporaryDirectory(dir=sapi_temp.name, prefix="beats-") as beat_dir:
+                    try:
+                        result = subprocess.run(
+                            [executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                             "-File", str(TOOL_DIR / "preview_narration.ps1"), "-RenderSequence",
+                             "-OutputDirectory", beat_dir],
+                            input=json.dumps(texts, ensure_ascii=False), capture_output=True,
+                            text=True, encoding="utf-8", errors="replace", timeout=300,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        )
+                    except (OSError, subprocess.TimeoutExpired) as exc:
+                        raise WorkbenchError(f"Could not render SAPI preview: {exc}", 503) from exc
+                    if result.returncode:
+                        raise WorkbenchError(result.stderr.strip() or "SAPI preview rendering failed.", 503)
+
+                    timeline: list[dict[str, Any]] = []
+                    cursor = 0
+                    frames = bytearray()
+                    format_key: tuple[Any, ...] | None = None
+                    sample_rate = 0
+                    for index, segment in enumerate(active):
+                        beat_path = Path(beat_dir) / f"beat-{index:04d}.wav"
+                        try:
+                            with wave.open(str(beat_path), "rb") as beat_audio:
+                                current_format = (beat_audio.getnchannels(), beat_audio.getsampwidth(),
+                                                  beat_audio.getframerate(), beat_audio.getcomptype())
+                                if format_key is None:
+                                    format_key = current_format
+                                    sample_rate = beat_audio.getframerate()
+                                elif current_format != format_key:
+                                    raise WorkbenchError("SAPI returned inconsistent audio formats between beats.", 503)
+                                frame_count = beat_audio.getnframes()
+                                frames.extend(beat_audio.readframes(frame_count))
+                        except (OSError, EOFError, wave.Error) as exc:
+                            raise WorkbenchError(f"Could not read SAPI beat {index + 1}: {exc}", 503) from exc
+                        timeline.append({"id": segment["id"], "start": cursor / sample_rate,
+                                         "end": (cursor + frame_count) / sample_rate})
+                        cursor += frame_count
+                        if index < len(active) - 1:
+                            silent_frames = round(sample_rate * pause_ms / 1000)
+                            frames.extend(b"\0" * silent_frames * format_key[0] * format_key[1])
+                            cursor += silent_frames
+
+                    output_path = Path(sapi_temp.name) / f"{digest}.wav"
+                    with wave.open(str(output_path), "wb") as output:
+                        output.setnchannels(format_key[0])
+                        output.setsampwidth(format_key[1])
+                        output.setframerate(sample_rate)
+                        output.writeframes(frames)
+                sapi_cache.update(digest=digest, path=output_path, beats=timeline)
+                return {"ok": True, "url": f"/api/audio/sapi-preview?v={digest}", "beats": timeline, "cached": False}
+            finally:
+                sapi_render_lock.release()
+
+        def _preview_sequence(self, texts: Any) -> None:
+            nonlocal sequence_process
+            if platform.system() != "Windows":
+                raise WorkbenchError("SAPI sequence preview is available only on Windows.", 503)
+            if (not isinstance(texts, list) or not texts or len(texts) > 500
+                or any(not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS for text in texts)):
+                raise WorkbenchError("Preview sequence needs 1 to 500 nonempty narration beats.")
+            executable = shutil.which("powershell.exe") or shutil.which("powershell")
+            if not executable:
+                raise WorkbenchError("Windows PowerShell was not found.", 503)
+            if not sequence_run_lock.acquire(blocking=False):
+                raise WorkbenchError("A SAPI sequence preview is already running.", 409)
+            process: subprocess.Popen[str] | None = None
+            try:
+                process = subprocess.Popen(
+                    [executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                     "-File", str(TOOL_DIR / "preview_narration.ps1"), "-Sequence"],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding="utf-8", errors="replace", cwd=TOOL_DIR,
+                )
+                with sequence_state_lock:
+                    sequence_process = process
+                assert process.stdin is not None
+                process.stdin.write(json.dumps(texts, ensure_ascii=False))
+                process.stdin.close()
+                self.send_response(200)
+                self._headers("application/x-ndjson; charset=utf-8")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
+
+                def emit(event: str, **details: Any) -> None:
+                    payload = json.dumps({"event": event, **details}, ensure_ascii=False).encode("utf-8") + b"\n"
+                    self.wfile.write(payload)
+                    self.wfile.flush()
+
+                assert process.stdout is not None
+                for line in process.stdout:
+                    kind, _, number = line.strip().partition(" ")
+                    if kind in {"START", "DONE"} and number.isdecimal() and int(number) < len(texts):
+                        emit(kind.lower(), index=int(number))
+                returncode = process.wait()
+                if returncode:
+                    assert process.stderr is not None
+                    emit("error", message=process.stderr.read().strip() or "SAPI preview stopped unexpectedly.")
+                else:
+                    emit("complete")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                with sequence_state_lock:
+                    if sequence_process is process:
+                        sequence_process = None
+                sequence_run_lock.release()
 
         def _run_generation(self, assemble: bool) -> dict[str, Any]:
             if not project.manifest_operation_lock.acquire(blocking=False):

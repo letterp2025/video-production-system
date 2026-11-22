@@ -3,19 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Narration workbench</title>
+  <title>VPS Workbench | Video Production System</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="wordmark" href="/" aria-label="Narration workbench home">
+    <a class="wordmark" href="/" aria-label="VPS Workbench home">
       <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>Narration<br>workbench</span>
+      <span>VPS<br>Workbench</span>
     </a>
     <div class="project-head">
       <span class="quiet-label">SELECTED PROJECT</span>
       <strong id="project-name">Loading project…</strong>
+    </div>
+    <div class="header-playback" aria-label="Play active narration">
+      <button id="play-sapi-sequence" class="header-playback-button sapi-button" type="button">
+        <strong id="play-sapi-label">&#9654; Preview SAPI fast</strong>
+        <small>Starts at selected beat · pause and resume</small>
+      </button>
+      <audio id="sapi-audio" preload="metadata" hidden></audio>
+      <button id="play-active-narration" class="header-playback-button f5-button" type="button">
+        <strong><span id="play-active-icon" aria-hidden="true">&#9654;</span> <span id="play-active-label">Build + play F5-TTS</span></strong>
+        <small>Generates changed takes; may take time</small>
+      </button>
+      <label class="preview-volume" for="preview-volume">
+        <span id="preview-volume-label">Volume 100%</span>
+        <input id="preview-volume" type="range" min="0" max="100" value="100" aria-label="Preview volume">
+      </label>
+      <span id="playback-status" class="playback-status" role="status" aria-live="polite"></span>
     </div>
     <div class="provider-state" id="provider-state" aria-live="polite">
       <span class="status-dot"></span><span id="provider-label">Checking Codex</span>
@@ -31,7 +47,7 @@
         </div>
         <span class="count-badge" id="segment-count">—</span>
       </div>
-      <p class="sequence-help">List order is spoken order. Select a beat to edit it.</p>
+      <p class="sequence-help" id="sequence-help" aria-live="polite">List order is spoken order. Select a beat to edit it.</p>
       <ol id="segment-list" class="segment-list"></ol>
       <div class="work-queue">
         <div>
@@ -75,17 +91,59 @@
           <button id="save-segment" class="button button-ink" type="button">Save segment</button>
         </div>
 
-        <details class="settings-panel">
-          <summary>Voice and speech settings</summary>
-          <div class="settings-grid">
-            <label>Voice style
-              <select id="voice-style"></select>
-              <small>Choose a reference profile already defined in the manifest.</small>
-            </label>
-            <div class="tts-fields" id="tts-fields"></div>
-          </div>
-        </details>
+      </div>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </section>
 
+    <aside class="review-panel" aria-label="Selected beat tools">
+      <div class="utility-tabs" role="tablist" aria-label="Beat tools">
+        <button id="tab-scratchpad" class="utility-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-scratchpad" tabindex="0">Scratchpad</button>
+        <button id="tab-voice" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-voice" tabindex="-1">Voice settings</button>
+        <button id="tab-listen" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-listen" tabindex="-1">Listen back</button>
+      </div>
+
+      <section id="panel-scratchpad" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-scratchpad" tabindex="0">
+        <div class="review-head">
+          <p class="section-kicker">SCRATCHPAD</p>
+          <h2>Work the line</h2>
+          <p>Write down what feels off. Ask Codex for a suggestion when you're ready.</p>
+        </div>
+        <label class="field-label" for="editorial-note">Your note</label>
+        <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
+        <div class="note-actions">
+          <button id="save-note" class="text-button" type="button">Save note</button>
+          <span id="note-status" aria-live="polite"></span>
+        </div>
+        <button id="ask-codex" class="button button-codex" type="button">
+          <span class="spark" aria-hidden="true">&#10035;</span><span>Ask Codex</span>
+        </button>
+        <details class="request-detail">
+          <summary>Review what Codex receives</summary>
+          <p>Only the selected line, your note, the previous and next line, and the generic AI guide are sent. Voice references, audio, local paths, and unrelated segments stay out of the request.</p>
+          <div id="request-context" class="context-preview"></div>
+        </details>
+        <div class="suggestion-heading">
+          <h3>Suggestions</h3><span id="suggestion-count">0</span>
+        </div>
+        <div id="suggestions" class="suggestions-list"></div>
+      </section>
+
+      <section id="panel-voice" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-voice" tabindex="0" hidden>
+        <div class="review-head">
+          <p class="section-kicker">VOICE AND SPEECH</p>
+          <h2>Shape the delivery</h2>
+          <p>Choose the reference style and per-beat speech settings.</p>
+        </div>
+        <div class="settings-grid">
+          <label>Voice style
+            <select id="voice-style"></select>
+            <small>Choose a reference profile already defined in the manifest.</small>
+          </label>
+          <div class="tts-fields" id="tts-fields"></div>
+        </div>
+      </section>
+
+      <section id="panel-listen" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-listen" tabindex="0" hidden>
         <section class="listening-panel" aria-label="Narration playback">
           <div class="listening-title">
             <div><span class="section-kicker">LISTEN BACK</span><h2>Hear the words</h2></div>
@@ -106,34 +164,7 @@
           </div>
           <pre id="tool-output" class="tool-output" hidden></pre>
         </section>
-      </div>
-      <div id="toast" role="status" aria-live="polite"></div>
-    </section>
-
-    <aside class="review-panel" aria-label="Editorial notes and Codex suggestions">
-      <div class="review-head">
-        <p class="section-kicker">SCRATCHPAD</p>
-        <h2>Work the line</h2>
-        <p>Write down what feels off. Ask Codex for a suggestion when you're ready.</p>
-      </div>
-      <label class="field-label" for="editorial-note">Your note</label>
-      <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
-      <div class="note-actions">
-        <button id="save-note" class="text-button" type="button">Save note</button>
-        <span id="note-status" aria-live="polite"></span>
-      </div>
-      <button id="ask-codex" class="button button-codex" type="button">
-        <span class="spark" aria-hidden="true">✳</span><span>Ask Codex</span>
-      </button>
-      <details class="request-detail">
-        <summary>Review what Codex receives</summary>
-        <p>Only the selected line, your note, the previous and next line, and the generic AI guide are sent. Voice references, audio, local paths, and unrelated segments stay out of the request.</p>
-        <div id="request-context" class="context-preview"></div>
-      </details>
-      <div class="suggestion-heading">
-        <h3>Suggestions</h3><span id="suggestion-count">0</span>
-      </div>
-      <div id="suggestions" class="suggestions-list"></div>
+      </section>
     </aside>
   </main>
   <footer class="footer-line">

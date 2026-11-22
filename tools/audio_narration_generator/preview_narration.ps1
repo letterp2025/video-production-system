@@ -2,7 +2,10 @@ param(
     [string] $Voice,
     [ValidateRange(-10, 10)]
     [int] $Rate = 0,
-    [switch] $ListVoices
+    [switch] $ListVoices,
+    [switch] $Sequence,
+    [switch] $RenderSequence,
+    [string] $OutputDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,8 +47,53 @@ try {
         }
 
         $synthesizer.Rate = $Rate
-        $synthesizer.SetOutputToDefaultAudioDevice()
-        $synthesizer.Speak($spokenText)
+        if ($RenderSequence) {
+            if (-not $OutputDirectory -or -not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
+                throw 'A valid temporary output directory is required to render a SAPI sequence.'
+            }
+            $beats = ConvertFrom-Json -InputObject $spokenText
+            if ($beats -isnot [System.Array]) {
+                $beats = @($beats)
+            }
+            if ($beats.Count -eq 0) {
+                throw 'Preview sequence has no beats.'
+            }
+            for ($index = 0; $index -lt $beats.Count; $index++) {
+                $beat = [string] $beats[$index]
+                if ([string]::IsNullOrWhiteSpace($beat)) {
+                    throw "Preview beat $($index + 1) is empty."
+                }
+                $file = Join-Path $OutputDirectory ('beat-{0:D4}.wav' -f $index)
+                $synthesizer.SetOutputToWaveFile($file)
+                $synthesizer.Speak($beat)
+                $synthesizer.SetOutputToNull()
+            }
+        }
+        elseif ($Sequence) {
+            $synthesizer.SetOutputToDefaultAudioDevice()
+            $beats = ConvertFrom-Json -InputObject $spokenText
+            if ($beats -isnot [System.Array]) {
+                $beats = @($beats)
+            }
+            if ($beats.Count -eq 0) {
+                throw 'Preview sequence has no beats.'
+            }
+            for ($index = 0; $index -lt $beats.Count; $index++) {
+                $beat = [string] $beats[$index]
+                if ([string]::IsNullOrWhiteSpace($beat)) {
+                    throw "Preview beat $($index + 1) is empty."
+                }
+                [Console]::Out.WriteLine("START $index")
+                [Console]::Out.Flush()
+                $synthesizer.Speak($beat)
+                [Console]::Out.WriteLine("DONE $index")
+                [Console]::Out.Flush()
+            }
+        }
+        else {
+            $synthesizer.SetOutputToDefaultAudioDevice()
+            $synthesizer.Speak($spokenText)
+        }
     }
 }
 catch {

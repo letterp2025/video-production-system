@@ -6,6 +6,7 @@ import json
 import tempfile
 import threading
 import unittest
+import wave
 from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError
@@ -68,6 +69,26 @@ class ProjectTest(unittest.TestCase):
         self.assertNotIn("Private voice transcript", encoded)
         self.assertNotIn(str(self.root), encoded)
         self.assertEqual([item["id"] for item in payload["segments"]], ["opening-hook", "next-beat"])
+
+    def test_state_includes_active_take_durations_for_playback_following(self):
+        durations = {"opening-hook": 1.0, "next-beat": 0.5}
+        for segment_id, duration in durations.items():
+            relative = f"segments/{segment_id}/take-001.wav"
+            path = self.audio / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with wave.open(str(path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(8_000)
+                audio.writeframes(b"\0\0" * round(duration * 8_000))
+            self.data["selected_takes"][segment_id] = relative
+        self.write_manifest()
+
+        with mock.patch.object(narration, "take_problem", return_value=None):
+            payload = self.project.state_payload()
+
+        self.assertEqual(payload["pause_ms"], 350)
+        self.assertEqual([item["duration_seconds"] for item in payload["segments"]], [1.0, 0.5])
 
     def test_save_edits_known_fields_preserves_unknown_fields_and_array_order(self):
         digest = self.project.state_payload()["manifest_hash"]
@@ -274,6 +295,21 @@ class HttpTest(unittest.TestCase):
         encoded = json.dumps(payload)
         self.assertNotIn("ref.wav", encoded)
         self.assertNotIn("ref words", encoded)
+
+    def test_assembled_wav_supports_browser_byte_ranges(self):
+        assembled = self.manifest.parent / "assembled"
+        assembled.mkdir()
+        path = assembled / "review.wav"
+        with wave.open(str(path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8_000)
+            audio.writeframes(b"\0\0" * 800)
+        with urlopen(Request(self.base + "/api/audio/assembly", headers={"Range": "bytes=0-63"})) as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(response.headers["Content-Type"], "audio/wav")
+            self.assertEqual(response.headers["Content-Range"], f"bytes 0-63/{path.stat().st_size}")
+            self.assertTrue(response.read().startswith(b"RIFF"))
 
     def test_host_header_rejects_non_local_origin(self):
         request = Request(self.base + "/api/state", headers={"Host": "example.org"})
