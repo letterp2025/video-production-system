@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "segment_id": { "type": "string" },
+    "proposed_text": { "type": "string" },
+    "rationale": { "type": "string" }
+  },
+  "required": ["segment_id", "proposed_text", "rationale"]
+}

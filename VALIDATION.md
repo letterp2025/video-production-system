@@ -33,6 +33,16 @@ The contact-sheet timing is only a synthetic smoke test, not a workload benchmar
 - The F5 manifests, run records, and generated audio were isolated in a temporary directory and removed after measurement. No spoken text, private reference path, reference recording, or generated audio is included in this repository.
 - The platform and PowerShell-missing cases were exercised with focused tests on Windows; macOS/Linux machines and a Windows machine without SAPI were not available for direct runtime testing. The preview's `finally` path disposes the synthesizer, but Ctrl+C cleanup was not separately signal-tested.
 
+## Addendum: script and audio workbench (2026-11-22)
+
+- Python compilation, JavaScript syntax checking, and `git diff --check` passed. The complete Audio Narration Generator test suite passed: 39 tests. New workbench coverage includes manifest conflict detection, unknown-field and order preservation, private voice-reference exclusion, project-audio path confinement, suggestion acceptance and stale handling, note persistence and cleanup, read-only Codex request construction, loopback host validation, assembly freshness against recorded selected takes, and the provider-unavailable path.
+- Codex CLI 0.171.0 completed a live structured suggestion request with generic temporary sample text. A second live check exercised the local HTTP flow: the note was saved, the Codex suggestion appeared as pending while the manifest stayed unchanged, and only acceptance updated the manifest. The temporary project used no channel narration, voice recording, or private project paths and was removed after the check.
+- After isolating the request from the Codex user configuration and its custom MCP/profile settings, a fresh live structured suggestion request also completed successfully. Codex authentication remained available.
+- The local browser interface loaded successfully in Vivaldi from `127.0.0.1`. It displayed the selected project's segments, Codex CLI status, notes and suggestion review areas, settings controls, and narration actions.
+- The workbench delegates persistent generation and assembly to the existing generator. Its generation route uses the generator's incremental mode; a live F5-TTS generation was not run through the browser interface. Existing generator tests cover changed-take regeneration and assembly. Browser-triggered SAPI playback was not separately run; transient-preview platform and CLI checks are recorded above.
+- This workbench was tested on Windows with Python 3.12.7 and Codex CLI 0.171.0. macOS/Linux workbench startup was not directly tested; its HTTP app uses the Python standard library. The Windows SAPI preview remains unsupported on those systems. Claude support is not implemented, and the interface does not reorder manifest segments.
+- All live suggestions used disposable generic text. No suggestion, note, voice reference, generated take, or project manifest was retained in this repository.
+
 ## Not covered
 
 - No F5 model, reference recording, or project narration is included in this repository. See the transient-preview addendum for the separate, temporary local inference check.

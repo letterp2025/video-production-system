@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "purpose": "Guide the local narration workbench and its Codex script suggestions.",
+  "canonical_source": "The selected project's narration_manifest.json is the lasting source of truth.",
+  "manifest_mapping": {
+    "segments": "Each object is one narration beat. Array order is playback order.",
+    "id": "Stable descriptive identifier. Never renumber or change it while editing wording.",
+    "title": "Short human-readable segment label.",
+    "text": "Approved spoken words. Notes and suggestions are not spoken text.",
+    "status": "active is included in narration, inactive is kept but omitted, deleted is retired history.",
+    "voice_style": "Optional key in voice_styles. A null value uses the root voice profile.",
+    "tts": "Optional per-segment overrides for settings supported by the narration generator."
+  },
+  "suggestion_rules": [
+    "Return one complete replacement for the selected segment's spoken text, not an edit to adjacent segments.",
+    "Preserve the speaker's meaning, facts, first-person point of view, and conversational voice.",
+    "Prefer natural spoken phrasing. Do not add semicolons, em dashes, formal filler, or artificial transitions.",
+    "Keep sentences easy to say aloud. Punctuation should sound natural when spoken by text-to-speech.",
+    "Do not invent product capabilities, test results, dates, measurements, or personal details.",
+    "Use adjacent segment text only to preserve continuity. Do not rewrite or return adjacent segments.",
+    "Do not change segment IDs, title, status, voice style, TTS settings, or playback order.",
+    "Return a concise explanation of the wording change and structured output matching the supplied schema."
+  ],
+  "privacy": {
+    "request_may_include": [
+      "The selected segment ID and title",
+      "The selected segment's spoken text",
+      "The creator's note for that segment",
+      "The immediately preceding and following segment text when present",
+      "This generic AI guide"
+    ],
+    "never_include": [
+      "Voice-reference audio or its transcript",
+      "Absolute project paths or local machine details",
+      "The full manifest or unrelated segments",
+      "Generated audio, takes, receipts, or performance records"
+    ]
+  }
+}

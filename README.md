@@ -18,7 +18,7 @@ This repository is maintained independently of EffectCraft, FFmpeg, F5-TTS, and 
 ## Included tools
 
 - Asset Finder: search Openverse and Wikimedia Commons, inspect a selected item, and save it with a source and license metadata receipt.
-- Audio Narration Generator: generate reviewable F5-TTS takes from an ordered JSON manifest and assemble selected takes.
+- Audio Narration Generator: edit narration in a local workbench, review Codex suggestions, generate reviewable F5-TTS takes from an ordered JSON manifest, and assemble selected takes.
 - Contact Sheet: sample a video at adaptive or selected intervals and create timestamped overview sheets.
 - EffectCraft Section Renderer: render EffectCraft compositions in PNG sections, encode and validate with FFmpeg, and preserve run records.
 - Word Focus Subtitles: generate a word-by-word ASS subtitle sequence from text.

@@ -62,6 +62,71 @@ The default Windows SAPI voice and rate are only for a quick wording and pacing 
 
 The preview process sends text only to the local Windows speech API. It does not load F5-TTS, start FFmpeg, write temporary audio, receipts, logs, or caches, or update hashes, takes, assembly records, or any manifest field.
 
+## Script and audio workbench
+
+The local workbench is a browser interface around `narration_manifest.json` and this generator. It does not create another script source or take system.
+
+### Start it
+
+From the public repository root, select one project's manifest and start the server:
+
+```powershell
+python tools/audio_narration_generator/workbench.py `
+  --manifest 'C:\path\to\video-project\audio\narration_manifest.json'
+```
+
+Open `http://127.0.0.1:8766`. Stop the server with `Ctrl+C`. The server binds only to `127.0.0.1` and serves only the project selected when it starts. It does not offer a project-picker or listen on the local network.
+
+The workbench uses the Python standard library. Install and sign in to the [Codex CLI](https://developers.openai.com/codex/cli) to use **Ask Codex**. For persistent F5-TTS generation, pass the Python executable from the compatible F5-TTS environment if it is not the interpreter you used to start the workbench:
+
+```powershell
+python tools/audio_narration_generator/workbench.py `
+  --manifest 'C:\path\to\video-project\audio\narration_manifest.json' `
+  --python 'C:\path\to\f5-tts\python.exe'
+```
+
+### Work on a segment
+
+1. Select a beat from the list. Its position in the manifest array is its narration order.
+2. Edit its title or spoken words, choose `active`, `inactive`, or `deleted`, and optionally select a voice profile or adjust supported TTS overrides. Save the segment to update the manifest. Unknown manifest fields and IDs are preserved.
+3. Save an editorial note in the temporary work queue. To request wording help, press **Ask Codex**. The interface shows the exact segment and nearby text that will be sent.
+4. Review Codex's proposed wording beside the original. You can audition the proposal on supported systems. Accepting it is the only way a suggestion changes the manifest; dismissing it leaves the spoken words alone.
+5. Use **Generate missing or changed takes** to run the existing generator's incremental path. It reuses current takes and only renders active segments whose text or generation settings need a new take. Use **Assemble active segments** to create the review narration after the selected takes are ready.
+6. Listen to a selected segment take and the latest assembled narration in the same page. The page checks both the manifest array hash and the selected-take set recorded with the last successful assembly before labeling it current.
+
+Manual segment edits are saved with a manifest-byte hash check. If another editor changes the file at the same time, the workbench refuses to overwrite it and asks you to reload. Suggestions also store the exact selected-text hash used at request time. If that text changes while Codex is working or before acceptance, the suggestion is marked stale and cannot be applied.
+
+### Codex connection and privacy
+
+**Ask Codex** starts one local `codex exec` request per click. It uses an ephemeral session, read-only sandbox, structured JSON output, ignores the Codex user configuration, and starts in an empty temporary working directory. It keeps Codex authentication but does not load custom providers, profiles, MCP servers, hooks, or rules from `config.toml`. It does not connect to the current Codex chat conversation. The [Codex CLI documentation](https://developers.openai.com/codex/cli) describes `codex exec` for bounded command-line tasks; the workbench uses it as a small suggestion request rather than granting the model a project workspace.
+
+The request contains the selected segment ID and title, its spoken text, your note, the immediately previous and next segment text when available, and the generic tracked [`ai_guide.json`](ai_guide.json). It excludes the full manifest, unrelated segments, project paths, voice-reference audio and transcripts, takes, and performance records. The UI has **Review what Codex receives** so you can inspect the project text before sending it. The response is schema-checked and stored in `audio/.workbench/workbench_state.json`; no response edits the manifest before you accept it.
+
+The workbench currently supports Codex CLI only. Claude is not configured or tested. If Codex is unavailable, the note remains in the local work queue and the manifest is unchanged.
+
+### Temporary work state and platform limits
+
+The work queue is saved to `audio/.workbench/workbench_state.json`. It stores segment notes, suggestions, review status, timestamps, and the base text hash for each suggestion. This folder is ignored by Git. Use **Clear resolved suggestions** to remove accepted, dismissed, and stale suggestion records; notes and pending suggestions stay. Removing this folder manually also clears the work queue without affecting narration.
+
+Quick preview uses the existing Windows SAPI preview and creates no audio file. It is unavailable on macOS and Linux; the workbench reports that limit without choosing another engine. Persistent F5-TTS generation remains available on systems where the user has installed its compatible environment. The app does not bundle F5-TTS, models, or voice recordings.
+
+The web API exposes only the manifest-backed segment fields needed by the interface and the selected/assembled WAV playback routes. It does not expose a general path or file browser. Never change the bind address from loopback.
+
+### Data boundary
+
+| Data | Stored where | Included in narration hashes? |
+|---|---|---|
+| Approved script, segment order/status, voice style, TTS settings | Project `audio/narration_manifest.json` | Yes, through the existing generator's fingerprint rules |
+| Editorial notes and suggestions | Project `audio/.workbench/workbench_state.json` | No |
+| Selected takes, receipts, assembly, and performance records | Project audio folders managed by the existing generator | Existing generator behavior |
+| Generic editing rules and response schema | Public tool folder in this repository | No project data |
+
+The workbench tests are included in the normal suite:
+
+```powershell
+python -m unittest discover -s tools/audio_narration_generator -p "test_*.py" -v
+```
+
 See the repository's [validation record](../../VALIDATION.md#addendum-transient-narration-preview-2026-11-22) for a local latency comparison and its limits. The measured SAPI progress callback is a proxy for audible onset; it was not verified with loopback capture.
 
 ### Starter manifest and voice references

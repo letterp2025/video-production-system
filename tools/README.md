@@ -5,7 +5,7 @@ Runnable utilities are under this folder. The two research folders describe opti
 | Tool | Type | What it does | Guide |
 |---|---|---|---|
 | Asset Finder | Runnable Python CLI | Searches Openverse and Wikimedia Commons; downloads a selected item with a metadata receipt after manual terms review | [README](asset_finder/README.md) |
-| Audio Narration Generator | Runnable Python CLI | Creates and tracks F5-TTS narration takes from an ordered JSON manifest, assembles selected takes, and offers an optional Windows SAPI preview that writes no audio | [README](audio_narration_generator/README.md) |
+| Audio Narration Generator | Runnable Python CLI and local web app | Creates and tracks F5-TTS takes from an ordered JSON manifest; the local workbench edits narration, keeps temporary notes, reviews Codex suggestions, and assembles selected takes | [README](audio_narration_generator/README.md) |
 | Contact Sheet | Runnable Python CLI | Extracts sampled frames and lays them out with timecodes | [README](contact-sheet/README.md) |
 | EffectCraft Section Renderer | Runnable PowerShell script | Renders sections, encodes with FFmpeg, validates output, resumes completed work, and writes run records | [README](effectcraft_ffmpeg_sections/README.md) |
 | Library Browser | Runnable Python local web app | Browses public visual libraries and an explicitly configured private library root without modifying entries | [README](library-browser/README.md) |
