@@ -35,7 +35,7 @@ The CLI and GUI are upstream EffectCraft components; this repository does not pa
 | Contact Sheet | Python 3.10 or newer, Pillow, FFmpeg, FFprobe | Install Pillow with python -m pip install Pillow, then run --help |
 | EffectCraft Section Renderer | PowerShell 7 recommended, EffectCraft CLI, FFmpeg, FFprobe | Parse the PowerShell script and verify all three executables are discoverable |
 | Word Focus Subtitles | Node.js 18 or newer; no npm packages | Run node generate.mjs --help |
-| Audio Narration Generator | Python from a compatible F5-TTS installation, its model dependencies, and FFmpeg for stereo review copies | Follow the [upstream F5-TTS instructions](https://github.com/SWivid/F5-TTS), then run the tool's --help and --dry-run |
+| Audio Narration Generator | Python from a compatible F5-TTS installation, its model dependencies, and FFmpeg for stereo review copies. Optional transient preview: Windows, Windows PowerShell 5.1, and an installed SAPI voice | Follow the [upstream F5-TTS instructions](https://github.com/SWivid/F5-TTS), then run the tool's --help and --dry-run. The Windows-only quick preview needs no F5-TTS model. |
 | Raster-to-Vector study | Optional VTracer and EffectCraft CLI | The study describes a tested bridge; it is not a packaged end-to-end tool |
 | Music and SFX study | No software required to read the guide | No generator has been selected |
 

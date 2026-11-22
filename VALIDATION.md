@@ -24,9 +24,18 @@
 
 The contact-sheet timing is only a synthetic smoke test, not a workload benchmark. Subtitle timing in the generated ASS is estimated from word count and is not a measured processing duration.
 
+## Addendum: transient narration preview (2026-11-22)
+
+- The Audio Narration Generator suite passed: 24 tests. The preview tests cover active/inactive/deleted/missing/duplicate segment behavior, UTF-8 input validation, a simulated unsupported Linux host, missing PowerShell, interruption handling, and read-only manifest lookup.
+- Windows PowerShell 5.1 listed the installed SAPI voices. Inline preview and explicit voice/rate selection returned success; an invalid voice returned a concise error and exit code 2. One active segment from a local project manifest also previewed successfully; its SHA-256 was unchanged afterward. The spoken words are not recorded here. Physical speaker output was not independently confirmed with loopback capture.
+- Three SAPI timing trials with the same short generic line measured PowerShell launch to first `SpeakProgress` callback at 1.024, 0.753, and 0.712 seconds (median 0.753 seconds). The short playback process completed in 3.422, 3.154, and 3.107 seconds (median 3.154 seconds). The callback is an approximate playback-start signal, not a loopback-confirmed audible onset.
+- The existing F5-TTS environment (F5-TTS 0.3.4, PyTorch 2.3.0+cu118, CUDA available) generated the same short line in two isolated CLI processes using one local reference clip. The first process took 92.61 seconds from command launch until its WAV was ready; a second launch with the OS file cache warm took 40.24 seconds. Each process loaded the model again, so “warm” means a warmed file cache, not a resident F5 model. The tool's post-model-load segment processing times were 6.45 and 7.45 seconds; each WAV was 1.54 seconds long. Player startup was not measured. These are single workstation samples, not a general benchmark or voice-quality comparison.
+- The F5 manifests, run records, and generated audio were isolated in a temporary directory and removed after measurement. No spoken text, private reference path, reference recording, or generated audio is included in this repository.
+- The platform and PowerShell-missing cases were exercised with focused tests on Windows; macOS/Linux machines and a Windows machine without SAPI were not available for direct runtime testing. The preview's `finally` path disposes the synthesizer, but Ctrl+C cleanup was not separately signal-tested.
+
 ## Not covered
 
-- No F5-TTS inference was run; its models, reference recordings, and project narration are not part of this public copy.
+- No F5 model, reference recording, or project narration is included in this repository. See the transient-preview addendum for the separate, temporary local inference check.
 - No real media was downloaded with Asset Finder.
 - No full EffectCraft render was run from the migrated copy. The renderer passed a syntax check; its measured rendering results are recorded separately in the [benchmark summary](benchmarks/EFFECTCRAFT_RENDERING.md).
 - No clean-machine installation test was completed. The fresh clone reused the installed runtimes on the same workstation.

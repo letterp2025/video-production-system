@@ -36,6 +36,34 @@ A segment's id is a stable descriptive key, not its position. Reorder the array 
 
 The supported tts overrides are speed, nfe_step, target_rms, cross_fade_duration, cfg_strength, sway_sampling_coef, and fix_duration. A voice_style selects a recording of the intended delivery; the label itself does not make F5-TTS perform an emotion.
 
+## Quick transient preview
+
+Use the optional preview when you want to hear a wording draft before making an F5-TTS take. It plays through Windows SAPI directly and does not create an audio file or alter the manifest. The current preview backend requires Windows, Windows PowerShell 5.1, and at least one installed SAPI voice. macOS and Linux are not supported by this preview command; it exits with an explanation and does not switch to another engine.
+
+Preview a manifest segment by its stable ID. Active and inactive segments are allowed; deleted, missing, and duplicate IDs are rejected:
+
+    python tools/audio_narration_generator/preview_narration.py --manifest path/to/audio/narration_manifest.json --segment-id opening-hook
+
+Preview text that is not in the manifest yet:
+
+    python tools/audio_narration_generator/preview_narration.py --text "Try this wording before adding it to the manifest."
+
+For longer or multiline drafts, `--text -` reads UTF-8 from standard input:
+
+    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    Get-Content -Encoding UTF8 draft.txt -Raw | python tools/audio_narration_generator/preview_narration.py --text -
+
+List installed SAPI voices, then optionally select one by its exact name. SAPI rate ranges from -10 to 10, with 0 as the default:
+
+    python tools/audio_narration_generator/preview_narration.py --list-voices
+    python tools/audio_narration_generator/preview_narration.py --text "A quick voice check." --voice "Microsoft Zira Desktop" --rate 1
+
+The default Windows SAPI voice and rate are only for a quick wording and pacing check. They do not use manifest `voice_style` or `tts` settings, do not sound like the F5-TTS actor reference, and do not model its delivery. SAPI output is not a production take. For an approved line, use the normal F5-TTS generation and review workflow below.
+
+The preview process sends text only to the local Windows speech API. It does not load F5-TTS, start FFmpeg, write temporary audio, receipts, logs, or caches, or update hashes, takes, assembly records, or any manifest field.
+
+See the repository's [validation record](../../VALIDATION.md#addendum-transient-narration-preview-2026-11-22) for a local latency comparison and its limits. The measured SAPI progress callback is a proxy for audible onset; it was not verified with loopback capture.
+
 ### Starter manifest and voice references
 
 `narration_manifest.example.json` is the generic starter template included with this tool. It contains placeholder transcripts and paths, not a ready-to-use speaker profile. This repository does not include channel-specific templates or voice recordings. Copy the example into each video project's `audio/` folder, then replace the sample values with references you are allowed to use.
@@ -49,19 +77,25 @@ The root `voice` object is the fallback profile. Each named entry in `voice_styl
 1. Copy narration_manifest.example.json to the project's audio folder.
 2. Add segment objects in playback order and set their IDs, text, status, voice style, and optional TTS overrides.
 3. Add local reference recordings and exact transcripts to voice or voice_styles.
-4. Preview the work without loading the model:
+4. Optionally listen to a draft through Windows SAPI without creating a file:
+
+    python tools/audio_narration_generator/preview_narration.py --manifest path/to/audio/narration_manifest.json --segment-id opening-hook
+
+   This quick preview is Windows-only and does not replace F5-TTS take generation or review.
+
+5. Preview the work without loading the model:
 
     python tools/audio_narration_generator/generate_narration.py --manifest path/to/audio/narration_manifest.json --dry-run
 
-5. Generate a new or stale take for one segment:
+6. Generate a new or stale take for one segment:
 
     python tools/audio_narration_generator/generate_narration.py --manifest path/to/audio/narration_manifest.json --segment opening-hook --generate-only
 
-6. Generate all missing or stale active takes and assemble the selected active beats:
+7. Generate all missing or stale active takes and assemble the selected active beats:
 
     python tools/audio_narration_generator/generate_narration.py --manifest path/to/audio/narration_manifest.json
 
-7. Change status to inactive to keep a beat out of assembly while preserving its takes, or deleted to retire it from future use. Do not delete manifest history just to reorder the video.
+8. Change status to inactive to keep a beat out of assembly while preserving its takes, or deleted to retire it from future use. Do not delete manifest history just to reorder the video.
 
 The normal run reuses valid selected takes and generates only missing or stale active segments. The result includes a mono master and, when FFmpeg is available, a 48 kHz stereo review copy. Take receipts and run performance records are saved beside the project audio.
 
