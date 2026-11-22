@@ -235,12 +235,14 @@ function renderTakes(segment) {
     ratingTitle.textContent = "Rating";
     const rating = document.createElement("select");
     rating.setAttribute("aria-label", `Rating for ${take.key}`);
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = take.rating ? take.rating[0].toUpperCase() + take.rating.slice(1) : "Choose a rating";
-    placeholder.disabled = !take.rating;
-    placeholder.selected = !take.rating;
-    rating.append(placeholder);
+    if (!take.rating) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Choose a rating";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      rating.append(placeholder);
+    }
     for (const [value, label] of [["favorite", "Favorite"], ["acceptable", "Acceptable"], ["rejected", "Rejected"]]) {
       const option = document.createElement("option");
       option.value = value;

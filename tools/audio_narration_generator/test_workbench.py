@@ -114,6 +114,29 @@ class ProjectTest(unittest.TestCase):
         with self.assertRaises(workbench.WorkbenchError):
             self.project.take_audio_path("opening-hook", "take-002")
 
+    def test_rating_pruned_take_updates_visible_and_archived_review(self):
+        self.data["segments"][0]["take_reviews"] = {
+            "take-002": {"rating": "rejected", "note": "Keep this note."},
+        }
+        self.data["pruned_takes"] = [{
+            "segment_id": "opening-hook",
+            "take": "opening-hook_take-002.wav",
+            "take_review": {"rating": "rejected", "note": "Keep this note."},
+        }]
+        self.write_manifest()
+        playback_hash = narration.segments_array_sha256(self.data)
+        digest = self.project.state_payload()["manifest_hash"]
+
+        result = self.project.rate_take("opening-hook", "take-002", "favorite", digest)
+
+        saved = json.loads(self.manifest.read_text(encoding="utf-8"))
+        expected = {"rating": "favorite", "note": "Keep this note."}
+        self.assertEqual(saved["segments"][0]["take_reviews"]["take-002"], expected)
+        self.assertEqual(saved["pruned_takes"][0]["take_review"], expected)
+        self.assertEqual(result["state"]["segments"][0]["takes"][0]["rating"], "favorite")
+        self.assertEqual(narration.segments_array_sha256(saved), playback_hash)
+        self.assertEqual(result["manifest_hash"], result["state"]["manifest_hash"])
+
     def test_save_edits_known_fields_preserves_unknown_fields_and_array_order(self):
         digest = self.project.state_payload()["manifest_hash"]
         result = self.project.save_segment("opening-hook", {

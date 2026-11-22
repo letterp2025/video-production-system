@@ -410,10 +410,15 @@ class Project:
                     ), None)
                     if record is None:
                         raise WorkbenchError("Take review record could not be found.", 404)
-                    review = record.get("take_review")
-                    review = dict(review) if isinstance(review, dict) else {}
+                    reviews = segment.setdefault("take_reviews", {})
+                    archived_review = record.get("take_review")
+                    current_review = reviews.get(take_key)
+                    review = dict(archived_review) if isinstance(archived_review, dict) else {}
+                    if isinstance(current_review, dict):
+                        review.update(current_review)
                     review["rating"] = rating
-                    record["take_review"] = review
+                    reviews[take_key] = review
+                    record["take_review"] = dict(review)
                 else:
                     reviews = segment.setdefault("take_reviews", {})
                     review = reviews.get(take_key)
