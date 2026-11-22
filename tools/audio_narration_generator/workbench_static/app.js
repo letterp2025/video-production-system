@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, manifestHash: null, baseline: null, busy: false, previewAvailable: false };
+const state = { project: null, selectedId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, previewAvailable: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -33,21 +33,31 @@ function snapshot() {
     tts: Object.fromEntries(knownTts.flatMap(([key]) => {
       const value = $("tts-" + key).value.trim();
       if (!value) return [];
-      const parsed = key === "nfe_step" ? Number.parseInt(value, 10) : Number(value);
+      const parsed = Number(value);
       return Number.isFinite(parsed) ? [[key, parsed]] : [];
     }))
   };
 }
 
 function snapshotKey(value) { return JSON.stringify(value); }
-function isDirty() { return state.baseline && snapshotKey(snapshot()) !== state.baseline; }
+function hasInvalidTtsInput() {
+  return [...document.querySelectorAll("#tts-fields input")].some((input) => {
+    const value = input.value.trim();
+    return input.validity.badInput || (value &&
+      (!Number.isFinite(Number(value)) || (input.id === "tts-nfe_step" && !Number.isInteger(Number(value)))));
+  });
+}
+function isDirty() { return state.baseline && (snapshotKey(snapshot()) !== state.baseline || hasInvalidTtsInput()); }
+function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note").value !== state.noteBaseline; }
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "save-note"].forEach((id) => {
+  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
+  document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button").forEach((item) => { item.disabled = value; });
+  updateDirtyState();
 }
 
 function toast(message) {
@@ -67,13 +77,15 @@ function showOutput(title, result) {
 
 function updateDirtyState() {
   const dirty = isDirty();
-  $("save-state").textContent = dirty ? "Unsaved changes" : "Saved";
+  const invalidTts = hasInvalidTtsInput();
+  $("save-state").textContent = invalidTts ? "Check speech settings" : dirty ? "Unsaved changes" : "Saved";
   $("save-state").classList.toggle("dirty", dirty);
-  $("save-segment").disabled = state.busy || !dirty;
+  $("save-segment").disabled = state.busy || !dirty || invalidTts;
   $("ask-codex").disabled = state.busy || dirty || !currentSegment();
   $("generate-take").disabled = state.busy || dirty || currentSegment()?.status !== "active";
   $("assemble-audio").disabled = state.busy || dirty;
   $("preview-draft").disabled = state.busy || !state.previewAvailable || !$("segment-text").value.trim();
+  $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
 }
 
 function renderSegmentList() {
@@ -186,7 +198,7 @@ function renderSuggestions(segment) {
       audition.type = "button";
       audition.className = "button button-dismiss";
       audition.textContent = "Audition";
-      audition.disabled = state.busy;
+      audition.disabled = state.busy || !state.previewAvailable;
       audition.addEventListener("click", () => auditionText(suggestion.proposed_text));
       const accept = document.createElement("button");
       accept.type = "button";
@@ -238,6 +250,7 @@ function renderEditor() {
   $("segment-text").value = segment.text;
   $("word-count").textContent = `${countWords(segment.text)} words`;
   $("editorial-note").value = segment.work?.note || "";
+  state.noteBaseline = $("editorial-note").value;
   renderVoiceStyles(segment);
   renderTts(segment);
   renderSuggestions(segment);
@@ -269,7 +282,6 @@ function renderEditor() {
 
 function renderProject() {
   $("project-name").textContent = state.project.project;
-  renderSegmentList();
   if (!state.selectedId || !state.project.segments.some((item) => item.id === state.selectedId)) {
     state.selectedId = state.project.segments[0]?.id || null;
   }
@@ -285,13 +297,16 @@ async function refreshState() {
 }
 
 function selectSegment(id) {
-  if (isDirty() && !window.confirm("Discard unsaved changes and switch segments?")) return;
+  if (state.busy) return toast("Wait for the current action to finish.");
+  if ((isDirty() || isNoteDirty()) && !window.confirm("Discard unsaved segment or note changes and switch segments?")) return;
   state.selectedId = id;
   renderSegmentList();
   renderEditor();
 }
 
 async function saveSegment() {
+  if (hasInvalidTtsInput()) return toast("Check the speech settings. NFE steps must be a whole number.");
+  if (isNoteDirty()) return toast("Save the note before updating the segment.");
   try {
     setBusy(true);
     const result = await request("/api/segment/save", {
@@ -306,12 +321,15 @@ async function saveSegment() {
 }
 
 async function saveNote() {
+  const segmentId = state.selectedId;
+  const note = $("editorial-note").value;
   try {
     setBusy(true);
-    const result = await request("/api/note", { segment_id: state.selectedId, note: $("editorial-note").value });
-    const updatedSegment = result.state.segments.find((item) => item.id === state.selectedId);
+    const result = await request("/api/note", { segment_id: segmentId, note });
+    const updatedSegment = result.state.segments.find((item) => item.id === segmentId);
     if (updatedSegment) currentSegment().work = updatedSegment.work;
-    $("note-status").textContent = "Saved to temporary work queue";
+    state.noteBaseline = note;
+    updateDirtyState();
     renderSuggestions(currentSegment());
     renderContext(currentSegment());
   } catch (error) { toast(error.message); }
@@ -337,6 +355,7 @@ async function askCodex() {
 }
 
 async function acceptSuggestion(id) {
+  if (isNoteDirty()) return toast("Save the note before accepting a suggestion.");
   try {
     setBusy(true);
     const result = await request("/api/suggestion/accept", {
@@ -351,6 +370,7 @@ async function acceptSuggestion(id) {
 }
 
 async function dismissSuggestion(id) {
+  if (isNoteDirty()) return toast("Save the note before dismissing a suggestion.");
   try {
     setBusy(true);
     const result = await request("/api/suggestion/dismiss", { segment_id: state.selectedId, suggestion_id: id });
@@ -377,16 +397,17 @@ async function auditionText(text, label = "Suggestion preview") {
 
 async function runGeneration(assemble) {
   if (isDirty()) return toast("Save segment changes before running narration tools.");
+  if (isNoteDirty()) return toast("Save the note before running narration tools.");
   try {
     setBusy(true);
-    showOutput(assemble ? "Assembling active narration…" : "Generating an F5-TTS take…", { output: "This can take a while. Leave this tab open." });
-    const result = await request(assemble ? "/api/assemble" : "/api/generate", assemble ? {} : { segment_id: state.selectedId });
-    showOutput(result.ok ? "Operation complete" : "Operation failed", result);
+    showOutput(assemble ? "Assembling active narration…" : "Generating missing or changed takes…", { output: "This can take a while. Leave this tab open." });
+    const result = await request(assemble ? "/api/assemble" : "/api/generate", {});
     if (result.state) {
       state.project = result.state;
       state.manifestHash = result.state.manifest_hash;
       renderProject();
     }
+    showOutput(result.ok ? "Operation complete" : "Operation failed", result);
     toast(result.ok ? (assemble ? "Active segments assembled." : "F5-TTS take generation finished.") : "The narration tool reported an error. See its output below.");
   } catch (error) { toast(error.message); }
   finally { setBusy(false); updateDirtyState(); }
@@ -401,6 +422,7 @@ async function checkProvider() {
       ? "Quick preview uses the computer's local SAPI voice. It does not create a take or audio file."
       : "Quick preview is unavailable on this system. No alternate engine or audio-file fallback is used.";
     updateDirtyState();
+    if (currentSegment()) renderSuggestions(currentSegment());
     if (result.codex.available) {
       node.className = "provider-state ready";
       $("provider-label").textContent = `Codex CLI found${result.codex.version ? ` · ${result.codex.version}` : ""}`;
@@ -415,6 +437,8 @@ async function checkProvider() {
 }
 
 async function clearResolved() {
+  if (state.busy) return;
+  if (isNoteDirty()) return toast("Save the note before clearing resolved suggestions.");
   const prompt = isDirty()
     ? "Clear resolved suggestions and discard this unsaved segment edit? Pending suggestions and notes will stay."
     : "Remove accepted, dismissed, and stale suggestions from the temporary queue? Pending suggestions and notes will stay.";
@@ -435,7 +459,7 @@ function bindEvents() {
   $("tts-fields").addEventListener("input", updateDirtyState);
   $("editorial-note").addEventListener("input", () => {
     const segment = currentSegment();
-    if (segment) renderContext(segment);
+    if (segment) { renderContext(segment); updateDirtyState(); }
   });
   $("save-segment").addEventListener("click", saveSegment);
   $("save-note").addEventListener("click", saveNote);
@@ -445,7 +469,8 @@ function bindEvents() {
   $("assemble-audio").addEventListener("click", () => runGeneration(true));
   $("clear-resolved").addEventListener("click", clearResolved);
   $("reload-project").addEventListener("click", async () => {
-    if (isDirty() && !window.confirm("Discard unsaved changes and reload the manifest?")) return;
+    if (state.busy) return;
+    if ((isDirty() || isNoteDirty()) && !window.confirm("Discard unsaved segment or note changes and reload the manifest?")) return;
     try { await refreshState(); toast("Manifest reloaded."); } catch (error) { toast(error.message); }
   });
 }

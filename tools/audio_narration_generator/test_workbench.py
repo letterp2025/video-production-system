@@ -53,6 +53,14 @@ class ProjectTest(unittest.TestCase):
         saved_manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
         self.assertNotIn("note", saved_manifest["segments"][0])
 
+    def test_full_work_queue_does_not_replace_existing_state(self):
+        self.project.save_note("opening-hook", "Keep this saved note.")
+        before = self.project.work_path.read_bytes()
+        with mock.patch.object(workbench, "MAX_WORK_STATE_BYTES", len(before) + 10):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "queue is full"):
+                self.project.save_note("opening-hook", "A" * 1_000)
+        self.assertEqual(self.project.work_path.read_bytes(), before)
+
     def test_state_view_omits_private_voice_references_and_local_paths(self):
         payload = self.project.state_payload()
         encoded = json.dumps(payload)
@@ -76,6 +84,21 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(saved["segments"][0]["status"], "inactive")
         self.assertEqual(result["manifest_hash"], result["state"]["manifest_hash"])
 
+    def test_title_edit_preserves_unchanged_tts_number_and_take_fingerprint(self):
+        self.data["segments"][0]["tts"] = {"speed": 1.0}
+        self.write_manifest()
+        before = narration.generation_fingerprint(self.data["segments"][0], self.data, self.manifest)
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.save_segment("opening-hook", {
+            "title": "New title", "tts": {"speed": 1},
+        }, digest)
+        saved = json.loads(self.manifest.read_text(encoding="utf-8"))
+        self.assertIsInstance(saved["segments"][0]["tts"]["speed"], float)
+        self.assertEqual(
+            narration.generation_fingerprint(saved["segments"][0], saved, self.manifest),
+            before,
+        )
+
     def test_manifest_conflicts_are_rejected_and_invalid_values_do_not_write(self):
         digest = self.project.state_payload()["manifest_hash"]
         self.manifest.write_text(self.manifest.read_text(encoding="utf-8") + " ", encoding="utf-8")
@@ -86,6 +109,15 @@ class ProjectTest(unittest.TestCase):
         with self.assertRaisesRegex(workbench.WorkbenchError, "positive"):
             self.project.save_segment("opening-hook", {"tts": {"nfe_step": 0}}, current_hash)
         self.assertEqual(self.manifest.read_bytes(), data_before)
+
+    def test_manifest_replace_failure_keeps_original_and_reports_error(self):
+        before = self.manifest.read_bytes()
+        digest = self.project.state_payload()["manifest_hash"]
+        with mock.patch.object(workbench.os, "replace", side_effect=PermissionError("file is open")):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "Could not save narration manifest"):
+                self.project.save_segment("opening-hook", {"text": "A revised line."}, digest)
+        self.assertEqual(self.manifest.read_bytes(), before)
+        self.assertEqual(list(self.audio.glob(".narration_manifest.*.tmp")), [])
 
     def test_suggestion_acceptance_requires_matching_base_text_and_updates_only_on_accept(self):
         context, _ = self.project.codex_context("opening-hook", "Make it less abrupt.")
@@ -223,8 +255,8 @@ class HttpTest(unittest.TestCase):
             "settings": {}, "selected_takes": {},
             "segments": [{"id": "beat-one", "text": "First words.", "status": "active"}],
         }), encoding="utf-8")
-        project = workbench.Project(self.manifest)
-        self.server = workbench.ThreadingHTTPServer(("127.0.0.1", 0), workbench.create_handler(project, None, "python"))
+        self.project = workbench.Project(self.manifest)
+        self.server = workbench.ThreadingHTTPServer(("127.0.0.1", 0), workbench.create_handler(self.project, None, "python"))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_server)
@@ -263,6 +295,49 @@ class HttpTest(unittest.TestCase):
         project_state = json.loads((self.manifest.parent / ".workbench" / "workbench_state.json").read_text(encoding="utf-8"))
         self.assertEqual(project_state["segments"]["beat-one"]["note"], "Make the line easier to say aloud.")
         self.assertEqual(self.manifest.read_bytes(), before)
+
+    def test_generation_blocks_concurrent_manifest_edits(self):
+        started = threading.Event()
+        release = threading.Event()
+        generated = []
+
+        def fake_run(command, timeout, input_text=None):
+            generated.append(command)
+            started.set()
+            if not release.wait(3):
+                raise RuntimeError("The test generation was not released.")
+            return {"ok": True, "returncode": 0, "output": "done", "error": ""}
+
+        def generate():
+            request = Request(
+                self.base + "/api/generate", data=b"{}",
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urlopen(request) as response:
+                self.assertEqual(response.status, 200)
+
+        with mock.patch.object(workbench, "run_tool", side_effect=fake_run):
+            thread = threading.Thread(target=generate)
+            thread.start()
+            try:
+                self.assertTrue(started.wait(2))
+                digest = self.project.state_payload()["manifest_hash"]
+                body = json.dumps({
+                    "segment_id": "beat-one", "manifest_hash": digest,
+                    "updates": {"text": "Do not overwrite during generation."},
+                }).encode("utf-8")
+                request = Request(
+                    self.base + "/api/segment/save", data=body,
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(request)
+                self.assertEqual(context.exception.code, 409)
+            finally:
+                release.set()
+                thread.join(timeout=3)
+        self.assertEqual(generated[0][-1], "--generate-only")
+        self.assertEqual(json.loads(self.manifest.read_text(encoding="utf-8"))["segments"][0]["text"], "First words.")
 
 
 if __name__ == "__main__":

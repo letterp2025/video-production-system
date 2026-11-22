@@ -65,6 +65,13 @@ Use a clearly named local work area such as `audio/.workbench/workbench_state.js
 
 The interface does not currently reorder segments; change array order in `narration_manifest.json`, then use assembly. It does not provide a project picker, persistent F5 model installation, pruning, Claude support, or a separate idea-outline stage.
 
+## Follow-up review (2026-11-22)
+
+- **Tested and corrected:** The generation result remains visible after the page refreshes. Unsaved note text is marked and guarded from accidental loss when switching beats or running an action. Invalid numeric TTS inputs cannot silently clear an override, and unchanged numeric settings preserve their stored type so a title edit does not trigger a needless new take.
+- **Tested and corrected:** Manifest edits and suggestion acceptance return a conflict while workbench generation or assembly is running. The stereo review WAV wins when mono and stereo outputs have the same modification time. Save failures report a useful error and leave the previous manifest intact. The temporary work queue checks its size before replacing its saved file.
+- **Tested repository boundary:** The public and internal channel repositories now ignore project `audio/.workbench/` state. A project in any other Git repository needs the same ignore rule.
+- **Proposed follow-up:** Show all historical takes for a beat, allow selecting and rating them, and offer a deliberate “generate another take” action for unchanged words. The existing generator and manifest already support these operations; the current interface exposes only the selected take and incremental generation.
+
 ## Completion criteria
 
 - A creator can run the app locally for one selected project and review/edit the manifest-backed narration.

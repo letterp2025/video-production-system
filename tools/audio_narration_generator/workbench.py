@@ -35,7 +35,7 @@ MAX_TEXT_CHARS = 24_000
 MAX_TITLE_CHARS = 160
 MAX_TTS_VALUES = set(narration.TTS_PARAMETER_DEFAULTS)
 MAX_RESPONSE_CHARS = 12_000
-SEGMENT_GENERATION_LOCK = threading.Lock()
+MAX_WORK_STATE_BYTES = 5_000_000
 
 
 def now_iso() -> str:
@@ -90,6 +90,7 @@ class Project:
         self.work_dir = self.audio_root / ".workbench"
         self.work_path = self.work_dir / "workbench_state.json"
         self.lock = threading.RLock()
+        self.manifest_operation_lock = threading.Lock()
         self._ensure_work_dir()
 
     def _ensure_work_dir(self) -> None:
@@ -123,13 +124,13 @@ class Project:
         try:
             resolved = self.work_path.resolve(strict=True)
             resolved.relative_to(self.audio_root.resolve(strict=True))
+            if resolved.stat().st_size > MAX_WORK_STATE_BYTES:
+                raise WorkbenchError("Temporary work state is larger than 5 MB. Move it aside to recover the queue.", 500)
             state = json.loads(resolved.read_text(encoding="utf-8"))
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise WorkbenchError(f"Temporary work state is unreadable: {exc}", 500) from exc
         if not isinstance(state, dict) or state.get("schema_version") != 1 or not isinstance(state.get("segments"), dict):
             raise WorkbenchError("Temporary work state has an unsupported format. Move it aside to start a fresh queue.", 500)
-        if len(json.dumps(state, ensure_ascii=False)) > 5_000_000:
-            raise WorkbenchError("Temporary work state is larger than the supported 5 MB limit.", 500)
         for segment_id, work in state["segments"].items():
             if not isinstance(segment_id, str) or not isinstance(work, dict):
                 raise WorkbenchError("Temporary work state contains an invalid segment entry.", 500)
@@ -146,7 +147,17 @@ class Project:
     def write_state(self, state: dict[str, Any]) -> None:
         self._ensure_work_dir()
         state["updated_at"] = now_iso()
-        atomic_write_json(self.work_path, state)
+        self._check_state_size(state)
+        try:
+            atomic_write_json(self.work_path, state)
+        except OSError as exc:
+            raise WorkbenchError(f"Could not save temporary work state: {exc}", 500) from exc
+
+    @staticmethod
+    def _check_state_size(state: dict[str, Any]) -> None:
+        serialized_size = len((json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+        if serialized_size > MAX_WORK_STATE_BYTES:
+            raise WorkbenchError("Temporary work queue is full. Clear resolved suggestions before adding more.", 413)
 
     @staticmethod
     def find_segment(data: dict[str, Any], segment_id: str) -> tuple[int, dict[str, Any]]:
@@ -246,6 +257,14 @@ class Project:
         return {"note": work.get("note", ""), "suggestions": suggestions}
 
     def save_segment(self, segment_id: str, updates: dict[str, Any], expected_hash: str) -> dict[str, Any]:
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            return self._save_segment_locked(segment_id, updates, expected_hash)
+        finally:
+            self.manifest_operation_lock.release()
+
+    def _save_segment_locked(self, segment_id: str, updates: dict[str, Any], expected_hash: str) -> dict[str, Any]:
         allowed = {"title", "text", "status", "voice_style", "tts"}
         if set(updates) - allowed:
             raise WorkbenchError("This edit contains an unsupported field.")
@@ -258,7 +277,7 @@ class Project:
                 if not isinstance(value, str) or not value.strip() or len(value) > MAX_TITLE_CHARS:
                     raise WorkbenchError(f"Title must be 1 to {MAX_TITLE_CHARS} characters.")
                 value = value.strip()
-                if segment.get("title", segment_id) != value or "title" in segment:
+                if segment.get("title", segment_id) != value:
                     segment["title"] = value
             if "text" in updates:
                 value = updates["text"]
@@ -268,13 +287,13 @@ class Project:
             if "status" in updates:
                 if updates["status"] not in {"active", "inactive", "deleted"}:
                     raise WorkbenchError("Status must be active, inactive, or deleted.")
-                if segment.get("status", "active") != updates["status"] or "status" in segment:
+                if segment.get("status", "active") != updates["status"]:
                     segment["status"] = updates["status"]
             if "voice_style" in updates:
                 voice_style = updates["voice_style"]
                 if voice_style is not None and voice_style not in data.get("voice_styles", {}):
                     raise WorkbenchError("Choose a voice style from this project's manifest.")
-                if segment.get("voice_style") != voice_style or "voice_style" in segment:
+                if segment.get("voice_style") != voice_style:
                     segment["voice_style"] = voice_style
             if "tts" in updates:
                 overrides = updates["tts"]
@@ -284,12 +303,13 @@ class Project:
                     narration.validate_tts_parameters(overrides, f"segments[{segment_id}].tts")
                 except ValueError as exc:
                     raise WorkbenchError(str(exc)) from exc
-                if segment.get("tts", {}) != overrides or "tts" in segment:
+                if segment.get("tts", {}) != overrides:
                     segment["tts"] = overrides
-            self._validate_candidate(data)
-            new_hash = self._write_manifest(data, current_hash)
             state = self.read_state()
             self._sync_stale(data, state)
+            self._check_state_size(state)
+            self._validate_candidate(data)
+            new_hash = self._write_manifest(data, current_hash)
             self.write_state(state)
             return {"manifest_hash": new_hash, "state": self.state_payload()}
 
@@ -328,6 +348,8 @@ class Project:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temp_path, self.manifest_path)
+        except OSError as exc:
+            raise WorkbenchError(f"Could not save narration manifest: {exc}", 500) from exc
         finally:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink()
@@ -397,6 +419,14 @@ class Project:
             return suggestion
 
     def accept_suggestion(self, segment_id: str, suggestion_id: str, expected_hash: str) -> dict[str, Any]:
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            return self._accept_suggestion_locked(segment_id, suggestion_id, expected_hash)
+        finally:
+            self.manifest_operation_lock.release()
+
+    def _accept_suggestion_locked(self, segment_id: str, suggestion_id: str, expected_hash: str) -> dict[str, Any]:
         with self.lock:
             data, current_hash = self.read_manifest()
             self._check_manifest_hash(expected_hash, current_hash)
@@ -413,12 +443,13 @@ class Project:
                 self.write_state(state)
                 raise WorkbenchError("The segment changed after this suggestion was made. It is now marked stale.", 409)
             segment["text"] = suggestion["proposed_text"]
-            self._validate_candidate(data)
-            self._write_manifest(data, current_hash)
             suggestion["status"] = "accepted"
             suggestion["resolved_at"] = now_iso()
             suggestion["accepted_text_sha256"] = text_hash(segment["text"])
             self._sync_stale(data, state)
+            self._check_state_size(state)
+            self._validate_candidate(data)
+            self._write_manifest(data, current_hash)
             self.write_state(state)
             return self.state_payload()
 
@@ -477,7 +508,10 @@ class Project:
         if not folder.is_dir() or folder.is_symlink():
             return None
         files = [path for path in folder.glob("*.wav") if path.is_file() and not path.is_symlink()]
-        return max(files, key=lambda path: path.stat().st_mtime_ns) if files else None
+        return max(
+            files,
+            key=lambda path: (path.stat().st_mtime_ns, path.name.endswith("stereo-review.wav")),
+        ) if files else None
 
     def _assembly_matches_manifest(self, data: dict[str, Any], audio_path: Path) -> bool:
         performance_dir = self.audio_root / "performance"
@@ -791,9 +825,9 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path == "/api/preview":
                     self._json(200, self._preview(self._string(body, "text")))
                 elif self.path == "/api/generate":
-                    self._json(200, self._run_generation(body, assemble=False))
+                    self._json(200, self._run_generation(assemble=False))
                 elif self.path == "/api/assemble":
-                    self._json(200, self._run_generation(body, assemble=True))
+                    self._json(200, self._run_generation(assemble=True))
                 else:
                     self._json(404, {"error": "Not found."})
             except WorkbenchError as exc:
@@ -832,11 +866,11 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 return {"ok": False, "error": message, "unsupported": "unavailable" in message.lower() or platform.system() != "Windows"}
             return {"ok": True, "message": result["output"] or "Preview finished."}
 
-        def _run_generation(self, body: dict[str, Any], assemble: bool) -> dict[str, Any]:
-            if not SEGMENT_GENERATION_LOCK.acquire(blocking=False):
-                raise WorkbenchError("A narration generation or assembly is already running.", 409)
+        def _run_generation(self, assemble: bool) -> dict[str, Any]:
+            if not project.manifest_operation_lock.acquire(blocking=False):
+                raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
             try:
-                data, _ = project.read_manifest()
+                project.read_manifest()
                 if assemble:
                     command = [python_path, str(TOOL_DIR / "generate_narration.py"), "--manifest", str(project.manifest_path), "--assemble-only"]
                 else:
@@ -845,7 +879,7 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 result["state"] = project.state_payload()
                 return result
             finally:
-                SEGMENT_GENERATION_LOCK.release()
+                project.manifest_operation_lock.release()
 
     return Handler
 

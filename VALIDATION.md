@@ -43,6 +43,8 @@ The contact-sheet timing is only a synthetic smoke test, not a workload benchmar
 - This workbench was tested on Windows with Python 3.12.7 and Codex CLI 0.171.0. macOS/Linux workbench startup was not directly tested; its HTTP app uses the Python standard library. The Windows SAPI preview remains unsupported on those systems. Claude support is not implemented, and the interface does not reorder manifest segments.
 - All live suggestions used disposable generic text. No suggestion, note, voice reference, generated take, or project manifest was retained in this repository.
 
+**Follow-up review, 2026-11-22:** The scoped commit and working tree were checked for unrelated changes. A second pass found and corrected result-panel visibility, unsaved-note handling, TTS number coercion, same-time assembly WAV selection, and workbench edit/generation concurrency. A regression test confirmed that editing a title preserves an unchanged take fingerprint. Python compilation, JavaScript syntax checking, and all 43 Audio Narration Generator tests passed after the changes. The live Codex request and browser layout checks above were not repeated; no F5-TTS model run was started for this review. The internal channel repository now ignores the project-local `.workbench` queue.
+
 ## Not covered
 
 - No F5 model, reference recording, or project narration is included in this repository. See the transient-preview addendum for the separate, temporary local inference check.

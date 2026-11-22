@@ -96,6 +96,8 @@ python tools/audio_narration_generator/workbench.py `
 
 Manual segment edits are saved with a manifest-byte hash check. If another editor changes the file at the same time, the workbench refuses to overwrite it and asks you to reload. Suggestions also store the exact selected-text hash used at request time. If that text changes while Codex is working or before acceptance, the suggestion is marked stale and cannot be applied.
 
+The workbench rejects its own manifest edits while its generator or assembly process is running. Do not run a separate generator CLI against the same manifest at the same time; a separate process does not share the workbench lock. To force another take of unchanged wording or select and rate an older take, use the generator CLI and manifest procedure below. The current page plays the selected take and the latest assembly; a full take-history selector is a proposed follow-up.
+
 ### Codex connection and privacy
 
 **Ask Codex** starts one local `codex exec` request per click. It uses an ephemeral session, read-only sandbox, structured JSON output, ignores the Codex user configuration, and starts in an empty temporary working directory. It keeps Codex authentication but does not load custom providers, profiles, MCP servers, hooks, or rules from `config.toml`. It does not connect to the current Codex chat conversation. The [Codex CLI documentation](https://developers.openai.com/codex/cli) describes `codex exec` for bounded command-line tasks; the workbench uses it as a small suggestion request rather than granting the model a project workspace.
@@ -106,7 +108,7 @@ The workbench currently supports Codex CLI only. Claude is not configured or tes
 
 ### Temporary work state and platform limits
 
-The work queue is saved to `audio/.workbench/workbench_state.json`. It stores segment notes, suggestions, review status, timestamps, and the base text hash for each suggestion. This folder is ignored by Git. Use **Clear resolved suggestions** to remove accepted, dismissed, and stale suggestion records; notes and pending suggestions stay. Removing this folder manually also clears the work queue without affecting narration.
+The work queue is saved to `audio/.workbench/workbench_state.json`. It stores segment notes, suggestions, review status, timestamps, and the base text hash for each suggestion. This public repository ignores `.workbench`; if a video project lives in another Git repository, add `**/.workbench/` to that repository's `.gitignore` too. Save a note before switching beats or running generation; the interface warns before discarding an unsaved note. Use **Clear resolved suggestions** to remove accepted, dismissed, and stale suggestion records; notes and pending suggestions stay. Removing this folder manually also clears the work queue without affecting narration.
 
 Quick preview uses the existing Windows SAPI preview and creates no audio file. It is unavailable on macOS and Linux; the workbench reports that limit without choosing another engine. Persistent F5-TTS generation remains available on systems where the user has installed its compatible environment. The app does not bundle F5-TTS, models, or voice recordings.
 
@@ -116,7 +118,7 @@ The web API exposes only the manifest-backed segment fields needed by the interf
 
 | Data | Stored where | Included in narration hashes? |
 |---|---|---|
-| Approved script, segment order/status, voice style, TTS settings | Project `audio/narration_manifest.json` | Yes, through the existing generator's fingerprint rules |
+| Approved script, segment order/status, voice style, TTS settings | Project `audio/narration_manifest.json` | Text and delivery settings affect take fingerprints; array order and status affect the assembly hash |
 | Editorial notes and suggestions | Project `audio/.workbench/workbench_state.json` | No |
 | Selected takes, receipts, assembly, and performance records | Project audio folders managed by the existing generator | Existing generator behavior |
 | Generic editing rules and response schema | Public tool folder in this repository | No project data |
