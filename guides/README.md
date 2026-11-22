@@ -6,6 +6,7 @@ These guides describe reusable planning and analysis methods for motion-led vide
 
 - [EffectCraft Guide](EFFECTCRAFT_GUIDE.md) — use AI prompts, MCP, or code-authored project data to build EffectCraft projects, review them in the GUI, and choose a render workflow.
 - [GSAP Guide](GSAP_GUIDE.md) — study GSAP demos and adapt time-based motion recipes for video production.
+- [Manim Code Study](MANIM_CODE_STUDY.md) — understand how Manim scenes, animations, renderers, and video output fit together.
 - [Video production workflow](VIDEO_PRODUCTION_WORKFLOW.md) — move from a viewer-facing idea through planning, production, review, and delivery.
 - [Storyboard and visual planning](STORYBOARD_AND_VISUAL_PLANNING.md) — connect story beats to scenes, visible elements, and animation.
 - [Video formats and visual treatments](VIDEO_FORMATS_AND_TREATMENTS.md) — distinguish story structure from visual style and compare combinations.
