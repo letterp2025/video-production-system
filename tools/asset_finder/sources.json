@@ -1,0 +1,81 @@
+{
+  "sources": [
+    {
+      "id": "openverse",
+      "domain": "openverse.org",
+      "media_types": ["image", "audio"],
+      "mode": "api",
+      "credentials": "Anonymous search; OAuth credentials can raise access limits",
+      "status": "implemented",
+      "search_url": "https://api.openverse.org/v1/",
+      "terms_url": "https://docs.openverse.org/terms_of_service/",
+      "notes": "Discovery index only. Review the original provider page and license; API metadata is not a rights guarantee."
+    },
+    {
+      "id": "wikimedia",
+      "domain": "commons.wikimedia.org",
+      "media_types": ["image", "video", "audio"],
+      "mode": "api",
+      "credentials": "No API key for ordinary search",
+      "status": "implemented",
+      "search_url": "https://commons.wikimedia.org/w/api.php",
+      "terms_url": "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+      "notes": "Licenses vary by file. The file description page is the source of review."
+    },
+    {
+      "id": "pexels",
+      "domain": "pexels.com",
+      "media_types": ["image", "video"],
+      "mode": "api",
+      "credentials": "API key required",
+      "status": "planned",
+      "search_url": "https://www.pexels.com/api/documentation/",
+      "terms_url": "https://www.pexels.com/terms-of-service/",
+      "notes": "Must show Pexels prominently, credit creators when possible, follow rate limits, and avoid replicating its core library."
+    },
+    {
+      "id": "pixabay",
+      "domain": "pixabay.com",
+      "media_types": ["image", "video"],
+      "mode": "api",
+      "credentials": "API key required",
+      "status": "planned",
+      "search_url": "https://pixabay.com/api/docs/",
+      "terms_url": "https://pixabay.com/service/license-summary/",
+      "notes": "API currently covers images and video. It requires search-result attribution, 24-hour response caching, and no systematic bulk downloads."
+    },
+    {
+      "id": "mixkit",
+      "domain": "mixkit.co",
+      "media_types": ["video", "music", "sfx"],
+      "mode": "manual",
+      "credentials": "No account identified as required for free items",
+      "status": "manual",
+      "search_url": "https://mixkit.co/",
+      "terms_url": "https://mixkit.co/license/",
+      "notes": "Check the individual media-type license; some video is restricted. Do not scrape."
+    },
+    {
+      "id": "youtube-audio-library",
+      "domain": "studio.youtube.com",
+      "media_types": ["music", "sfx"],
+      "mode": "manual",
+      "credentials": "YouTube Studio account required",
+      "status": "manual",
+      "search_url": "https://studio.youtube.com/",
+      "terms_url": "https://support.google.com/youtube/answer/3376882",
+      "notes": "Download from YouTube Studio and preserve track attribution details. Intended for YouTube video use."
+    },
+    {
+      "id": "freesound",
+      "domain": "freesound.org",
+      "media_types": ["sfx", "audio"],
+      "mode": "manual",
+      "credentials": "API token required for API use",
+      "status": "manual-research-only",
+      "search_url": "https://freesound.org/",
+      "terms_url": "https://freesound.org/docs/api/terms_of_use.html",
+      "notes": "Free API use is limited to non-commercial purposes unless commercial API terms are arranged. Individual asset licenses also vary."
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Visual libraries</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="catalog-mark" href="/" aria-label="Visual libraries home"><span></span><span></span></a>
+      <div class="masthead-rule" aria-hidden="true"></div>
+      <div class="local-status"><span class="status-light"></span> Local · read only</div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div class="intro-copy">
+          <p class="kicker">The working catalog</p>
+          <h1 id="page-title">Visual<br>libraries.</h1>
+          <p class="lede">Browse reusable elements and motion alongside private reference studies.</p>
+        </div>
+        <div class="scope-panel" aria-label="Choose visibility scope">
+          <span class="scope-label">Show entries from</span>
+          <div class="scope-switch" role="group" aria-label="Visibility">
+            <button type="button" data-scope="all" class="selected" aria-pressed="true">Everything</button>
+            <button type="button" data-scope="public" aria-pressed="false">Public</button>
+            <button type="button" data-scope="private" aria-pressed="false">Private</button>
+          </div>
+          <p class="scope-note">Every entry carries its source label.</p>
+        </div>
+      </section>
+
+      <section class="catalog" aria-label="Library catalog">
+        <aside class="filters" aria-label="Library filters">
+          <h2>Browse by type</h2>
+          <button class="filter-link active" type="button" data-category="all" aria-pressed="true">All entries <span id="all-count">—</span></button>
+          <button class="filter-link" type="button" data-category="visual_reference_library" aria-pressed="false">References <span data-count="visual_reference_library">—</span></button>
+          <button class="filter-link" type="button" data-category="visual_elements_library" aria-pressed="false">Elements <span data-count="visual_elements_library">—</span></button>
+          <button class="filter-link" type="button" data-category="visual_animations_library" aria-pressed="false">Animations <span data-count="visual_animations_library">—</span></button>
+          <div class="filter-footnote">Private entries stay on this computer. This page cannot edit or publish them.</div>
+        </aside>
+
+        <div class="results-area">
+          <div class="results-head">
+            <div>
+              <h2 id="results-title">All entries</h2>
+              <p id="results-count" aria-live="polite">Loading catalog…</p>
+            </div>
+            <label class="search-box">
+              <span class="sr-only">Search entries</span>
+              <span aria-hidden="true">⌕</span>
+              <input id="search" type="search" placeholder="Search by name, ID, or note">
+            </label>
+          </div>
+          <div id="notice" class="notice" hidden></div>
+          <div id="entries" class="entry-grid" role="list"></div>
+          <div id="empty" class="empty-state" hidden>
+            <div class="empty-mark" aria-hidden="true">?</div>
+            <h3>No entries match</h3>
+            <p>Try another filter or a shorter search.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="detail" class="detail-dialog" aria-labelledby="detail-title">
+      <form method="dialog" class="dialog-top"><button class="close-button" aria-label="Close entry details">Close <span aria-hidden="true">×</span></button></form>
+      <div id="detail-body" class="detail-body"></div>
+    </dialog>
+    <footer><span>Visual Library Browser <span class="credit">A tool from 11K FIRE</span></span><span>Only listens on this computer · 127.0.0.1</span></footer>
+  </body>
+</html>

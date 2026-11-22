@@ -1,0 +1,8 @@
+﻿{
+  "sections": [
+    { "startFrame": 0, "endFrame": 60 },
+    { "startFrame": 60, "endFrame": 120 },
+    { "startFrame": 120, "endFrame": 180 },
+    { "startFrame": 180, "endFrame": 240 }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "project": "example-video",
+  "project_status": "in_progress",
+  "segments_sha256": null,
+  "pruned_takes": [],
+  "voice": {
+    "reference_audio": "reference_audio/voice-reference.wav",
+    "reference_text": "Replace this with the exact words spoken in the reference audio."
+  },
+  "voice_styles": {
+    "concerned": {
+      "reference_audio": "reference_audio/voice-styles/concerned.wav",
+      "reference_text": "Replace this with the exact words spoken in the concerned-style reference."
+    }
+  },
+  "settings": {
+    "speed": 1.0,
+    "pause_ms": 350,
+    "review_sample_rate": 48000,
+    "vocoder_name": "vocos",
+    "nfe_step": 32,
+    "target_rms": 0.1,
+    "cross_fade_duration": 0.15,
+    "cfg_strength": 2.0,
+    "sway_sampling_coef": -1.0
+  },
+  "selected_takes": {},
+  "segments": [
+    {
+      "id": "opening-hook",
+      "status": "active",
+      "title": "Opening hook",
+      "voice_style": "concerned",
+      "take_reviews": {},
+      "tts": {
+        "speed": 1.05
+      },
+      "text": "Put the narration for this story beat here. Keep the wording aligned with the approved script.",
+      "text_sha256": "65bc00a056e6ca36e52b617b9370b0911f94ff5c15ee86365fe7f07fada7f7e4"
+    },
+    {
+      "id": "main-point",
+      "status": "active",
+      "title": "Main point",
+      "take_reviews": {},
+      "tts": {
+        "speed": 0.95,
+        "nfe_step": 32
+      },
+      "text": "Put the next beat here. Separate segments at natural paragraph or story-beat boundaries.",
+      "text_sha256": "3cd2deb6e69ed231b69d6bebf9603c5d83db6af828818ed4676c1aa57ca23585"
+    }
+  ]
+}
