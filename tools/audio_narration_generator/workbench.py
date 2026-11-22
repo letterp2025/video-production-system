@@ -235,6 +235,7 @@ class Project:
                     "duration_seconds": duration_seconds,
                     "has_selected_take": bool(selected),
                     "audio_url": f"/api/audio/segment/{segment_id}" if selected else None,
+                    "takes": self._segment_takes(data, segment),
                     "work": self._work_summary(work, segment["text"]),
                 })
             assembled = self._latest_assembly()
@@ -564,6 +565,101 @@ class Project:
             raise WorkbenchError("This segment has no selected narration take.", 404)
         return self._safe_audio_path(relative)
 
+    def _segment_takes(self, data: dict[str, Any], segment: dict[str, Any]) -> list[dict[str, Any]]:
+        """Join on-disk takes, manifest reviews, selected take, and prune records."""
+        segment_id = segment["id"]
+        selected = data["selected_takes"].get(segment_id)
+        paths: dict[str, str] = {}
+        root = self.audio_root / "segments"
+        if root.is_dir() and not root.is_symlink():
+            for folder in root.iterdir():
+                if not folder.is_dir() or folder.is_symlink():
+                    continue
+                for path in folder.iterdir():
+                    if not path.is_file() or path.is_symlink() or path.suffix.lower() != ".wav":
+                        continue
+                    match = narration.TAKE_PATTERN.fullmatch(path.name)
+                    if not match:
+                        continue
+                    if path.name.startswith(f"{segment_id}_take-"):
+                        pass
+                    elif path.name == f"take-{match.group(1)}.wav":
+                        try:
+                            receipt = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+                        except (OSError, json.JSONDecodeError):
+                            continue
+                        if not isinstance(receipt, dict) or receipt.get("segment_id") != segment_id:
+                            continue
+                    else:
+                        continue
+                    key = f"take-{int(match.group(1)):03d}"
+                    paths[key] = path.relative_to(self.audio_root).as_posix()
+        selected_key = None
+        if selected:
+            match = narration.TAKE_PATTERN.fullmatch(Path(selected).name)
+            if match:
+                selected_key = f"take-{int(match.group(1)):03d}"
+                try:
+                    self._safe_audio_path(selected)
+                except WorkbenchError:
+                    pass
+                else:
+                    paths[selected_key] = selected
+        pruned: dict[str, dict[str, Any]] = {}
+        for record in data.get("pruned_takes", []):
+            if not isinstance(record, dict) or record.get("segment_id") != segment_id:
+                continue
+            match = narration.TAKE_PATTERN.fullmatch(Path(str(record.get("take", ""))).name)
+            if match:
+                pruned[f"take-{int(match.group(1)):03d}"] = record
+        keys = set(paths) | set(segment.get("take_reviews", {})) | set(pruned)
+        if selected_key:
+            keys.add(selected_key)
+        return [
+            {
+                "key": key,
+                "rating": (segment.get("take_reviews", {}).get(key) or pruned.get(key, {}).get("take_review") or {}).get("rating"),
+                "note": (segment.get("take_reviews", {}).get(key) or pruned.get(key, {}).get("take_review") or {}).get("note", ""),
+                "selected": key == selected_key,
+                "available": key in paths,
+                "pruned": key in pruned and key not in paths,
+                "audio_url": f"/api/audio/take/{segment_id}/{key}" if key in paths else None,
+            }
+            for key in sorted(keys, key=lambda value: int(value.removeprefix("take-")))
+        ]
+
+    def take_audio_path(self, segment_id: str, take_key: str) -> Path:
+        if not narration.TAKE_REVIEW_PATTERN.fullmatch(take_key):
+            raise WorkbenchError("Invalid take number.", 404)
+        data, _ = self.read_manifest()
+        _, segment = self.find_segment(data, segment_id)
+        take = next((item for item in self._segment_takes(data, segment) if item["key"] == take_key), None)
+        if not take or not take["audio_url"]:
+            raise WorkbenchError("This take's audio is unavailable.", 404)
+        # Resolve the confined path again; never accept a filesystem path from the browser.
+        selected = data["selected_takes"].get(segment_id)
+        if take["selected"] and selected:
+            try:
+                return self._safe_audio_path(selected)
+            except WorkbenchError:
+                pass
+        root = self.audio_root / "segments"
+        for folder in root.iterdir():
+            if not folder.is_dir() or folder.is_symlink():
+                continue
+            for name in (f"{segment_id}_{take_key}.wav", f"{take_key}.wav"):
+                path = folder / name
+                if path.is_file() and not path.is_symlink():
+                    if name == f"{take_key}.wav":
+                        try:
+                            receipt = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+                        except (OSError, json.JSONDecodeError):
+                            continue
+                        if not isinstance(receipt, dict) or receipt.get("segment_id") != segment_id:
+                            continue
+                    return self._safe_audio_path(path.relative_to(self.audio_root).as_posix())
+        raise WorkbenchError("This take's audio is unavailable.", 404)
+
     def _safe_audio_path(self, relative: str) -> Path:
         try:
             path = narration.relative_audio_path(self.audio_root, relative)
@@ -803,6 +899,11 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path.startswith("/api/audio/segment/"):
                     segment_id = self.path.removeprefix("/api/audio/segment/")
                     self._send_file(project._selected_audio(segment_id), "audio/wav", allow_range=True)
+                elif self.path.startswith("/api/audio/take/"):
+                    parts = self.path.removeprefix("/api/audio/take/").split("/")
+                    if len(parts) != 2:
+                        raise WorkbenchError("Invalid take audio request.", 404)
+                    self._send_file(project.take_audio_path(parts[0], parts[1]), "audio/wav", allow_range=True)
                 elif self.path == "/api/audio/assembly":
                     self._send_file(project.assembly_audio_path(), "audio/wav", allow_range=True)
                 elif self.path.split("?", 1)[0] == "/api/audio/sapi-preview":

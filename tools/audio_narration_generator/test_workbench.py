@@ -90,6 +90,30 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(payload["pause_ms"], 350)
         self.assertEqual([item["duration_seconds"] for item in payload["segments"]], [1.0, 0.5])
 
+    def test_take_history_includes_selected_reviewed_and_pruned_takes(self):
+        take = self.audio / "segments" / "opening-hook" / "opening-hook_take-001.wav"
+        take.parent.mkdir(parents=True)
+        with wave.open(str(take), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8_000)
+            audio.writeframes(b"\0\0" * 80)
+        self.data["selected_takes"]["opening-hook"] = take.relative_to(self.audio).as_posix()
+        self.data["segments"][0]["take_reviews"] = {"take-001": {"rating": "favorite", "note": "Good pacing"}}
+        self.data["pruned_takes"] = [{"segment_id": "opening-hook", "take": "opening-hook_take-002.wav", "take_review": {"rating": "rejected", "note": "Too slow"}}]
+        self.write_manifest()
+
+        history = self.project.state_payload()["segments"][0]["takes"]
+        self.assertEqual([item["key"] for item in history], ["take-001", "take-002"])
+        self.assertEqual(history[0]["rating"], "favorite")
+        self.assertTrue(history[0]["selected"])
+        self.assertEqual(self.project.take_audio_path("opening-hook", "take-001"), take)
+        self.assertEqual(history[1]["note"], "Too slow")
+        self.assertTrue(history[1]["pruned"])
+        self.assertIsNone(history[1]["audio_url"])
+        with self.assertRaises(workbench.WorkbenchError):
+            self.project.take_audio_path("opening-hook", "take-002")
+
     def test_save_edits_known_fields_preserves_unknown_fields_and_array_order(self):
         digest = self.project.state_payload()["manifest_hash"]
         result = self.project.save_segment("opening-hook", {
@@ -352,6 +376,24 @@ class HttpTest(unittest.TestCase):
         encoded = json.dumps(payload)
         self.assertNotIn("ref.wav", encoded)
         self.assertNotIn("ref words", encoded)
+
+    def test_take_audio_route_serves_only_manifest_associated_audio(self):
+        take = self.manifest.parent / "segments" / "beat-one" / "beat-one_take-001.wav"
+        take.parent.mkdir(parents=True)
+        with wave.open(str(take), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8_000)
+            audio.writeframes(b"\0\0" * 80)
+        data = json.loads(self.manifest.read_text(encoding="utf-8"))
+        data["selected_takes"]["beat-one"] = take.relative_to(self.manifest.parent).as_posix()
+        self.manifest.write_text(json.dumps(data), encoding="utf-8")
+        with urlopen(Request(self.base + "/api/audio/take/beat-one/take-001", headers={"Range": "bytes=0-63"})) as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(len(response.read()), 64)
+        with self.assertRaises(HTTPError) as error:
+            urlopen(self.base + "/api/audio/take/beat-one/take-002")
+        self.assertEqual(error.exception.code, 404)
 
     def test_reorder_route_updates_manifest_array(self):
         data = json.loads(self.manifest.read_text(encoding="utf-8"))

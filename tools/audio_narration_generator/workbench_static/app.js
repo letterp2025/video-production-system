@@ -65,7 +65,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "preview-draft", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat"].forEach((id) => {
+  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -97,7 +97,6 @@ function updateDirtyState() {
   $("ask-codex").disabled = state.busy || dirty || !currentSegment();
   $("generate-take").disabled = state.busy || dirty || currentSegment()?.status !== "active";
   $("assemble-audio").disabled = state.busy || dirty;
-  $("preview-draft").disabled = state.busy || !state.previewAvailable || !$("segment-text").value.trim();
   $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active");
   $("play-sapi-sequence").disabled = !state.sapiSequenceActive && (state.busy || !state.previewAvailable || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active"));
   $("move-beat-up").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, -1);
@@ -195,6 +194,55 @@ function renderTts(segment) {
     input.addEventListener("input", updateDirtyState);
     wrap.append(title, input, hint);
     container.append(wrap);
+  }
+}
+
+function renderTakes(segment) {
+  const host = $("take-history-list");
+  host.replaceChildren();
+  const takes = segment.takes || [];
+  $("take-history-summary").textContent = takes.length
+    ? `${takes.length} recorded take${takes.length === 1 ? "" : "s"}. Ratings and notes come from the manifest.`
+    : "No F5-TTS takes recorded for this beat yet.";
+  for (const take of takes) {
+    const card = document.createElement("article");
+    card.className = `take-card${take.selected ? " selected" : ""}`;
+    const heading = document.createElement("div");
+    heading.className = "take-card-heading";
+    const label = document.createElement("strong");
+    label.textContent = take.key;
+    heading.append(label);
+    if (take.selected) {
+      const badge = document.createElement("span");
+      badge.className = "take-selected-badge";
+      badge.textContent = "Selected for assembly";
+      heading.append(badge);
+    }
+    card.append(heading);
+    const rating = document.createElement("p");
+    rating.className = "take-rating";
+    rating.textContent = `Rating: ${take.rating || "Not rated"}`;
+    card.append(rating);
+    if (take.note) {
+      const note = document.createElement("p");
+      note.className = "take-note";
+      note.textContent = take.note;
+      card.append(note);
+    }
+    if (take.audio_url) {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "none";
+      audio.src = take.audio_url;
+      audio.setAttribute("aria-label", `Play ${take.key}`);
+      card.append(audio);
+    } else {
+      const unavailable = document.createElement("p");
+      unavailable.className = "take-unavailable";
+      unavailable.textContent = take.pruned ? "Audio pruned; review kept in manifest." : "Audio file unavailable.";
+      card.append(unavailable);
+    }
+    host.append(card);
   }
 }
 
@@ -312,28 +360,11 @@ function renderEditor() {
   state.noteBaseline = $("editorial-note").value;
   renderVoiceStyles(segment);
   renderTts(segment);
+  renderTakes(segment);
   renderSuggestions(segment);
   renderContext(segment);
   state.baseline = snapshotKey(snapshot());
-  const takeRow = $("take-audio-row");
-  if (segment.audio_url) {
-    takeRow.hidden = false;
-    $("take-audio").src = segment.audio_url;
-    $("take-state-label").textContent = segment.generation_state === "ready" ? "Current selected take" : segment.generation_detail || "Selected take may need refresh";
-  } else {
-    takeRow.hidden = true;
-    $("take-audio").removeAttribute("src");
-    $("take-audio").load();
-  }
-  if (state.project.assembled_audio_url) {
-    $("assembly-audio-row").hidden = false;
-    setAssemblyAudioSource($("assembly-audio"), state.project.assembled_audio_url, state.project.assembled_audio_name);
-    const freshness = state.project.assembly_current ? "Current" : "Out of date";
-    $("assembly-name").textContent = `${freshness} · ${state.project.assembled_audio_name || "latest WAV"}`;
-  } else {
-    $("assembly-audio-row").hidden = true;
-    setAssemblyAudioSource($("assembly-audio"), null, null);
-  }
+  setAssemblyAudioSource($("assembly-audio"), state.project.assembled_audio_url || null, state.project.assembled_audio_name || null);
   $("tool-output").hidden = true;
   updateDirtyState();
 }
@@ -355,6 +386,7 @@ function followPlaybackBeat(segmentId) {
   state.noteBaseline = $("editorial-note").value;
   renderVoiceStyles(segment);
   renderTts(segment);
+  renderTakes(segment);
   renderSuggestions(segment);
   renderContext(segment);
   state.baseline = snapshotKey(snapshot());
@@ -586,10 +618,10 @@ async function playActiveNarration() {
           renderProject();
         }
         showOutput(lastResult.ok ? "Take generation complete" : "Take generation failed", lastResult);
-        if (!lastResult.ok) throw new Error("Some narration takes could not be generated. See Listen back for details.");
+        if (!lastResult.ok) throw new Error("Some narration takes could not be generated. See F5-TTS for details.");
         active = state.project.segments.filter((segment) => segment.status === "active");
         if (active.some((segment) => segment.generation_state !== "ready")) {
-          throw new Error("Some active beats still need a valid take. See Listen back for details.");
+          throw new Error("Some active beats still need a valid take. See F5-TTS for details.");
         }
       }
 
@@ -603,15 +635,15 @@ async function playActiveNarration() {
           renderProject();
         }
         showOutput(lastResult.ok ? "Narration assembly complete" : "Narration assembly failed", lastResult);
-        if (!lastResult.ok) throw new Error("The active beats could not be assembled. See Listen back for details.");
+        if (!lastResult.ok) throw new Error("The active beats could not be assembled. See F5-TTS for details.");
       }
       if (!state.project.assembly_current || !state.project.assembled_audio_url) {
-        throw new Error("The narration is still out of date. See Listen back for details.");
+        throw new Error("The narration is still out of date. See F5-TTS for details.");
       }
     } catch (error) {
       showOutput("Preview preparation failed", { output: lastResult?.output, error: error.message });
-      activateUtilityTab($("tab-listen"));
-      setPreviewStatus("Preview could not be prepared. See Listen back for details.");
+      activateUtilityTab($("tab-f5tts"));
+      setPreviewStatus("Preview could not be prepared. See F5-TTS for details.");
       toast(error.message);
       return;
     } finally {
@@ -810,10 +842,6 @@ async function dismissSuggestion(id) {
   finally { setBusy(false); }
 }
 
-async function previewDraft() {
-  await auditionText($("segment-text").value, "Quick preview");
-}
-
 async function auditionText(text, label = "Suggestion preview") {
   try {
     if (state.playbackActive) $("assembly-audio").pause();
@@ -849,10 +877,6 @@ async function checkProvider() {
   try {
     const result = await request("/api/provider");
     state.previewAvailable = Boolean(result.preview?.available);
-    updateDirtyState();
-    $("preview-note").textContent = state.previewAvailable
-      ? "Single-beat quick preview speaks directly. Sequence preview makes a temporary WAV outside the project; neither creates an F5 take."
-      : "Quick preview is unavailable on this system. No alternate engine or audio-file fallback is used.";
     updateDirtyState();
     if (currentSegment()) renderSuggestions(currentSegment());
     if (result.codex.available) {
@@ -932,7 +956,6 @@ function bindEvents() {
   $("move-beat-down").addEventListener("click", () => moveSegment(state.selectedId, 1));
   $("save-note").addEventListener("click", saveNote);
   $("ask-codex").addEventListener("click", askCodex);
-  $("preview-draft").addEventListener("click", previewDraft);
   $("play-active-narration").addEventListener("click", playActiveNarration);
   $("play-sapi-sequence").addEventListener("click", playSapiSequence);
   const sapiAudio = $("sapi-audio");

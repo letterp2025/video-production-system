@@ -17,8 +17,39 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList })", context);
+  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes })", context);
 }
+
+test("every direct DOM reference exists in the workbench markup", () => {
+  const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
+  const script = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
+  const ids = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
+  const refs = new Set(Array.from(script.matchAll(/\$\("([^"]+)"\)/g), (match) => match[1]));
+  assert.deepEqual([...refs].filter((id) => !ids.has(id)).sort(), []);
+});
+
+test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {
+  function node() {
+    return {
+      children: [], attributes: {},
+      replaceChildren() { this.children = []; },
+      append(...children) { this.children.push(...children); },
+      setAttribute(key, value) { this.attributes[key] = value; },
+    };
+  }
+  const summary = node();
+  const list = node();
+  const { renderTakes } = loadWorkbench({ "take-history-summary": summary, "take-history-list": list }, { createElement: node });
+  renderTakes({ takes: [
+    { key: "take-001", selected: true, rating: "favorite", note: "Good pacing", audio_url: "/api/audio/take/beat/take-001" },
+    { key: "take-002", selected: false, rating: "rejected", note: "Too slow", pruned: true, audio_url: null },
+  ] });
+  assert.match(summary.textContent, /2 recorded takes/);
+  assert.equal(list.children.length, 2);
+  assert.equal(list.children[0].children[0].children[1].textContent, "Selected for assembly");
+  assert.equal(list.children[0].children[3].src, "/api/audio/take/beat/take-001");
+  assert.match(list.children[1].children[3].textContent, /Audio pruned/);
+});
 
 test("beat visibility and move targets follow the manifest order", () => {
   const { state, visibleSegments, reorderTarget } = loadWorkbench();

@@ -27,6 +27,7 @@
         <strong><span id="play-active-icon" aria-hidden="true">&#9654;</span> <span id="play-active-label">Build + play F5-TTS</span></strong>
         <small>Generates changed takes; may take time</small>
       </button>
+      <audio id="assembly-audio" preload="none" hidden></audio>
       <label class="preview-volume" for="preview-volume">
         <span id="preview-volume-label">Volume 100%</span>
         <input id="preview-volume" type="range" min="0" max="100" value="100" aria-label="Preview volume">
@@ -108,8 +109,7 @@
     <aside class="review-panel" aria-label="Selected beat tools">
       <div class="utility-tabs" role="tablist" aria-label="Beat tools">
         <button id="tab-scratchpad" class="utility-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-scratchpad" tabindex="0">Scratchpad</button>
-        <button id="tab-voice" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-voice" tabindex="-1">Voice settings</button>
-        <button id="tab-listen" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-listen" tabindex="-1">Listen back</button>
+        <button id="tab-f5tts" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-f5tts" tabindex="-1">F5-TTS</button>
       </div>
 
       <section id="panel-scratchpad" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-scratchpad" tabindex="0">
@@ -138,12 +138,19 @@
         <div id="suggestions" class="suggestions-list"></div>
       </section>
 
-      <section id="panel-voice" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-voice" tabindex="0" hidden>
+      <section id="panel-f5tts" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-f5tts" tabindex="0" hidden>
         <div class="review-head">
-          <p class="section-kicker">VOICE AND SPEECH</p>
-          <h2>Shape the delivery</h2>
-          <p>Choose the reference style and per-beat speech settings.</p>
+          <p class="section-kicker">F5-TTS</p>
+          <h2>Takes and delivery</h2>
+          <p>Compare this beat's takes, then adjust its voice for the next render.</p>
         </div>
+        <div class="take-history">
+          <h3>Take history</h3>
+          <p id="take-history-summary" class="take-history-summary"></p>
+          <div id="take-history-list" class="take-history-list"></div>
+        </div>
+        <details class="voice-settings">
+          <summary>Voice and speech settings</summary>
         <div class="settings-grid">
           <label>Voice style
             <select id="voice-style"></select>
@@ -151,23 +158,8 @@
           </label>
           <div class="tts-fields" id="tts-fields"></div>
         </div>
-      </section>
-
-      <section id="panel-listen" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-listen" tabindex="0" hidden>
+        </details>
         <section class="listening-panel" aria-label="Narration playback">
-          <div class="listening-title">
-            <div><span class="section-kicker">LISTEN BACK</span><h2>Hear the words</h2></div>
-            <button id="preview-draft" class="button button-outline" type="button">Quick preview</button>
-          </div>
-          <p class="listening-note" id="preview-note">Quick preview uses the computer's local voice. It does not create a take or audio file.</p>
-          <div class="audio-row" id="take-audio-row" hidden>
-            <div><strong>Selected take</strong><span id="take-state-label"></span></div>
-            <audio id="take-audio" controls preload="none"></audio>
-          </div>
-          <div class="audio-row assembly-row" id="assembly-audio-row" hidden>
-            <div><strong>Full narration</strong><span id="assembly-name"></span></div>
-            <audio id="assembly-audio" controls preload="none"></audio>
-          </div>
           <div class="generation-actions">
             <button id="generate-take" class="button button-signal" type="button">Generate missing or changed takes</button>
             <button id="assemble-audio" class="button button-outline" type="button">Assemble active segments</button>

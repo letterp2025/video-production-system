@@ -94,11 +94,11 @@ python tools/audio_narration_generator/workbench.py `
 3. Save an editorial note in the temporary work queue. To request wording help, press **Ask Codex**. The interface shows the exact segment and nearby text that will be sent.
 4. Review Codex's proposed wording beside the original. You can audition the proposal on supported systems. Accepting it is the only way a suggestion changes the manifest; dismissing it leaves the spoken words alone.
 5. Use **Generate missing or changed takes** to run the existing generator's incremental path. It reuses current takes and only renders active segments whose text or generation settings need a new take. Use **Assemble active segments** to create the review narration after the selected takes are ready. For a quick temporary voice, choose a beat and press **Preview SAPI fast** in the header on Windows. For the selected F5-TTS voice, press **Build + play F5-TTS** in the header. That button regenerates stale active takes, assembles only when the selected takes or beat order changed, then plays from the selected beat. Both players follow the audio through later beats; click again to pause and resume. Save unsaved script edits and notes before starting.
-6. Listen to a selected segment take and the latest assembled narration in the same page. The page checks both the manifest array hash and the selected-take set recorded with the last successful assembly before labeling it current.
+6. Open the **F5-TTS** tab to compare every recorded take for the selected beat. It shows the selected take, manifest rating and note, playable audio when present, and retained records for pruned takes. Expand **Voice and speech settings** there to change the next render. The header's **Build + play F5-TTS** button plays the assembled narration; the page checks both the manifest array hash and the selected-take set recorded with the last successful assembly before labeling it current.
 
 Manual segment edits are saved with a manifest-byte hash check. If another editor changes the file at the same time, the workbench refuses to overwrite it and asks you to reload. Suggestions also store the exact selected-text hash used at request time. If that text changes while Codex is working or before acceptance, the suggestion is marked stale and cannot be applied.
 
-The workbench rejects its own manifest edits while its generator or assembly process is running. Do not run a separate generator CLI against the same manifest at the same time; a separate process does not share the workbench lock. To force another take of unchanged wording or select and rate an older take, use the generator CLI and manifest procedure below. The current page plays the selected take and the latest assembly; a full take-history selector is a proposed follow-up.
+The workbench rejects its own manifest edits while its generator or assembly process is running. Do not run a separate generator CLI against the same manifest at the same time; a separate process does not share the workbench lock. The take history is currently read-only. To force another take of unchanged wording or select and rate an older take, use the generator CLI and manifest procedure below.
 
 ### Codex connection and privacy
 
@@ -114,7 +114,7 @@ The work queue is saved to `audio/.workbench/workbench_state.json`. It stores se
 
 Quick preview uses the existing Windows SAPI preview and creates no audio file. It is unavailable on macOS and Linux; the workbench reports that limit without choosing another engine. Persistent F5-TTS generation remains available on systems where the user has installed its compatible environment. The app does not bundle F5-TTS, models, or voice recordings.
 
-The web API exposes only the manifest-backed segment fields needed by the interface and the selected/assembled WAV playback routes. It does not expose a general path or file browser. Never change the bind address from loopback.
+The web API exposes only the manifest-backed segment fields needed by the interface and confined take/assembled WAV playback routes. It does not expose a general path or file browser. Never change the bind address from loopback.
 
 ### Data boundary
 
