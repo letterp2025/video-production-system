@@ -6,18 +6,18 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-function loadWorkbench(elements = {}) {
+function loadWorkbench(elements = {}, documentMethods = {}) {
   const source = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
   const withoutStartup = source.replace(/\nstart\(\);\s*$/, "");
   assert.notEqual(withoutStartup, source, "The workbench startup call moved; update this harness.");
   const context = vm.createContext({
-    document: { getElementById: (id) => elements[id] },
+    document: { getElementById: (id) => elements[id], ...documentMethods },
     window: { setTimeout, clearTimeout },
     HTMLMediaElement: { HAVE_METADATA: 1, NETWORK_LOADING: 2 },
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget })", context);
+  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList })", context);
 }
 
 test("beat visibility and move targets follow the manifest order", () => {
@@ -51,6 +51,43 @@ test("move buttons have visible labels in the selected beat editor", () => {
   assert.match(header, /id="move-beat-up"[^>]*>↑ Move beat up<\/button>/);
   assert.match(header, /id="move-beat-down"[^>]*>↓ Move beat down<\/button>/);
   assert.ok(!html.slice(0, editorStart).includes('id="move-beat-up"'));
+});
+
+test("beat list hides inactive and deleted mock beats until each filter is enabled", () => {
+  function node() {
+    return {
+      children: [],
+      replaceChildren() { this.children = []; },
+      append(...children) { this.children.push(...children); },
+      setAttribute() {},
+      addEventListener() {},
+    };
+  }
+  const list = node();
+  const count = node();
+  const { state, renderSegmentList } = loadWorkbench({
+    "segment-list": list, "segment-count": count,
+  }, { createElement: node });
+  state.project = { segments: [
+    { id: "first", position: 1, title: "First", status: "active", generation_state: "ready" },
+    { id: "draft", position: 2, title: "Draft", status: "inactive" },
+    { id: "retired", position: 3, title: "Retired", status: "deleted" },
+  ] };
+  const shown = () => list.children.map((li) => li.children[0].children[1].children[0].textContent);
+  renderSegmentList();
+  assert.deepEqual(shown(), ["First"]);
+  assert.equal(count.textContent, "1");
+  state.showInactive = true;
+  renderSegmentList();
+  assert.deepEqual(shown(), ["First", "Draft"]);
+  state.showInactive = false;
+  state.showDeleted = true;
+  renderSegmentList();
+  assert.deepEqual(shown(), ["First", "Retired"]);
+  state.showInactive = true;
+  renderSegmentList();
+  assert.deepEqual(shown(), ["First", "Draft", "Retired"]);
+  assert.equal(count.textContent, "3");
 });
 
 function fakeAudio({ failedLoads = 0 } = {}) {
