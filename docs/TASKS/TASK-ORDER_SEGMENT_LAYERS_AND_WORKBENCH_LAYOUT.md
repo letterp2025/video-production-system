@@ -37,7 +37,7 @@ The initial workbench only needs a create/open/status workflow for these JSON fi
 ## Workbench layout requirements
 
 - Keep the top bar for global context and transport. Move the existing visual-plan selector/create/status out of it as part of the layout change; do not duplicate the control in two places.
-- Add a clearly labeled **Layers** workspace for the selected beat, with Script + Audio, Visual, Music, and SFX as discoverable views or sections. Preserve the always-visible beat list and a readable script editor at desktop sizes. Keep Scratchpad and F5-TTS reachable without losing their current actions or review context.
+- Add a clearly labeled layer workspace for the selected beat. The top-level tabs and their nesting are specified in the [Workbench Layer Tabs task order](TASK-ORDER_WORKBENCH_LAYER_TABS.md). Preserve the always-visible beat list and a readable script editor at desktop sizes.
 - Show the selected beat ID/title and each layer's state (for example, missing, saved, needs review, invalid) in one consistent place. A create action must say which beat and layer it affects.
 - On narrower windows, collapse or stack secondary panels instead of shrinking the editor or forcing the top bar into a single crowded line. Keyboard navigation, focus visibility, labels, and status announcements must remain usable.
 - Avoid a wholesale redesign of the existing visual style. Validate the layout at the screenshot-sized desktop viewport and at narrower widths, with long project names and long beat titles.
@@ -62,5 +62,6 @@ The initial workbench only needs a create/open/status workflow for these JSON fi
 ## Related documents
 
 - [Visual animation per-segment task order](TASK-ORDER_VISUAL_ANIMATION_PER_SEGMENT.md)
+- [Workbench Layer Tabs task order](TASK-ORDER_WORKBENCH_LAYER_TABS.md)
 - [Narration workbench guide](../../tools/audio_narration_generator/README.md#segment-layers)
 - [Asset Finder](../../tools/asset_finder/README.md)
