@@ -2,6 +2,8 @@
 
 This guide describes a practical VPS workflow from a rough narration idea through a reviewed video. VPS starts with the narration spine: stable segments hold the spoken words and connect them to visual, music, and sound-effects work. You can stop after any stage and resume later.
 
+Starting from a fresh VPS clone and creating a separate project with Codex? Begin with [Start a Video Project with Codex](START_A_VIDEO_PROJECT_WITH_CODEX.md). The public VPS checkout is the tool and instruction source; keep the actual video project in its own folder.
+
 ## The first video project: narration first
 
 The first project, `effectcraft-introduction-01`, began with a rough narration outline. The creator gave Codex the outline; Codex expanded it into segment entries. Then the creator and Codex revised the wording through conversation and repeated listening. That was the first production milestone: a segment-by-segment narration draft that could be heard and adjusted. Visuals, music, and sound effects did not need to be planned before reaching that point.

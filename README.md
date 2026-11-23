@@ -7,6 +7,7 @@ This repository is maintained independently of EffectCraft, FFmpeg, F5-TTS, and 
 ## Start here
 
 - [Installation guide](INSTALLATION.md)
+- [Start a video project with Codex](guides/START_A_VIDEO_PROJECT_WITH_CODEX.md)
 - [Production and planning guides](guides/README.md)
 - [EffectCraft installation and workflow guide](guides/EFFECTCRAFT_GUIDE.md)
 - [YouTube growth and script-writing guides](guides/README.md#guides)
