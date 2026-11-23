@@ -9,6 +9,7 @@
 - Each plan stores the selected segment ID, title, and approved-text SHA-256. A text hash mismatch reports **Needs review** without changing the file. The workflow does not render or modify narration/audio.
 - Workbench tests and user documentation cover this feature in [`tools/audio_narration_generator/README.md`](../../tools/audio_narration_generator/README.md#visual-plan-for-a-beat).
 - The renderer/preview/editor integration remains a separate follow-up and is not part of VAP-001.
+- **Architecture follow-up:** VAP-001 describes the shipped per-segment plan-file implementation. The target visual-layer source of truth is now one project-level `audio/visuals/visual_manifest.json`, keyed by narration segment ID, with an EffectCraft, Manim, or GSAP selection and an optional plan attached to each entry. The existing plan files must be preserved and safely imported or supported during that transition; see the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
 
 ## Objective
 
@@ -89,6 +90,7 @@ The first implementation is a planning and organization workflow. It must not im
 
 ## Related documents
 
+- [Segment Layers and Workbench Layout](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md)
 - [Visual Animations Library](../../libraries/visual_animations_library/README.md)
 - [GSAP Guide](../../guides/GSAP_GUIDE.md)
 - [Script and Narration Workbench task order](../../tools/audio_narration_generator/docs/TASKS/TASK-ORDER_SCRIPT_AUDIO_LOCAL_WEB_APP.md)
