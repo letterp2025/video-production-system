@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Music layer segment mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "layer", "segment_id", "source_text_sha256", "cues"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "layer": { "const": "music" },
+    "segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+    "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "cues": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/cue" } }
+  },
+  "$defs": {
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_path", "start_seconds"],
+      "properties": {
+        "asset_path": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "start_seconds": { "type": "number", "minimum": 0 },
+        "source_offset_seconds": { "type": "number", "minimum": 0 },
+        "duration_seconds": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "gain_db": { "type": "number", "minimum": -60, "maximum": 12 }
+      }
+    }
+  }
+}

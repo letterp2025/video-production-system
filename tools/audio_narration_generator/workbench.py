@@ -277,7 +277,32 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 return
             try:
                 body = self._read_json()
-                if self.path == "/api/visuals/create":
+                if self.path == "/api/visual-takes/create":
+                    result = project.create_visual_take(
+                        self._required_string(body, "take_id"),
+                        self._required_string(body, "title"),
+                        self._string(body, "creative_direction"),
+                        self._required_string(body, "manifest_hash"),
+                    )
+                    self._json(201, result)
+                elif self.path == "/api/visual-takes/select":
+                    self._json(200, {"state": project.select_visual_take(self._required_string(body, "take_id"))})
+                elif self.path == "/api/visual-takes/open":
+                    project.open_visual_take(self._required_string(body, "take_id"))
+                    self._json(200, {"ok": True})
+                elif self.path in {"/api/layers/music/create", "/api/layers/sfx/create"}:
+                    layer = self.path.split("/")[-2]
+                    result = project.create_audio_mapping(
+                        layer,
+                        self._required_string(body, "segment_id"),
+                        self._required_string(body, "manifest_hash"),
+                    )
+                    self._json(201, result)
+                elif self.path in {"/api/layers/music/open", "/api/layers/sfx/open"}:
+                    layer = self.path.split("/")[-2]
+                    project.open_audio_mapping(layer, self._required_string(body, "segment_id"))
+                    self._json(200, {"ok": True})
+                elif self.path == "/api/visuals/create":
                     recipe_id = body.get("recipe_id")
                     if recipe_id is not None and not isinstance(recipe_id, str):
                         raise WorkbenchError("recipe_id must be a library recipe ID or null.")

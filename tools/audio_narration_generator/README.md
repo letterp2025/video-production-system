@@ -80,9 +80,9 @@ The local workbench is a browser interface around `narration_manifest.json` and 
 
 A segment (called a **beat** in the workbench) is the stable unit that ties four production layers together: **script text and narration audio**, **visual**, **music**, and **SFX**. The manifest's segment ID and spoken order are the shared identity and sequence. A layer can be empty; adding music or SFX must not change the spoken words or regenerate a narration take.
 
-Today, approved text, narration settings, and selected takes live in `audio/narration_manifest.json`; optional visual planning lives in `audio/visuals/<segment-id>.json`. Music and SFX mappings are **planned, not implemented**. They will be separate project-local JSON files keyed by the same segment ID, referencing reviewed audio assets kept with the video project. Creating a mapping will not download assets, mix audio, or render video. See the [segment layers and workbench layout task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the proposed storage, controls, and acceptance checks.
+Approved text, narration settings, and selected narration takes live in `audio/narration_manifest.json`. New visual work uses one or more whole-spine take manifests in the video project's `visual_layer/` folder, keyed by the same stable narration IDs; the selected take is recorded separately. The earlier `audio/visuals/<segment-id>.json` recipe plans remain available under a clearly labeled legacy section. Music and SFX use optional per-beat JSON mappings at `audio/music/<segment-id>.json` and `audio/sfx/<segment-id>.json`. Creating a mapping does not search for or download assets, play or mix audio, or render video. See the [segment layers and workbench layout task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the schemas and boundaries.
 
-The selected-beat workspace is organized into four top-level tabs: **Script and Narration Layer**, **Visual Layer**, **Music Layer**, and **SoundEffects Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. The Music and SoundEffects tabs currently explain the planned mapping workflow; their JSON editors are not implemented yet. See the [workbench layer tabs task order](../../docs/TASKS/TASK-ORDER_WORKBENCH_LAYER_TABS.md).
+The selected-beat workspace is organized into four top-level tabs: **Script and Narration Layer**, **Visual Layer**, **Music Layer**, and **SoundEffects Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. Visual Layer selects and opens whole-spine take manifests; Music and SoundEffects create/open the selected beat's optional mapping JSON. These JSON files are edited in the operating system's default editor, not in an in-app cue or animation editor. See the [workbench layer tabs task order](../../docs/TASKS/TASK-ORDER_WORKBENCH_LAYER_TABS.md).
 
 ### Start it
 
@@ -116,11 +116,47 @@ python tools/audio_narration_generator/workbench.py `
 
 Manual segment edits are saved with a manifest-byte hash check. If another editor changes the file at the same time, the workbench refuses to overwrite it and asks you to reload. Suggestions also store the exact selected-text hash used at request time. If that text changes while Codex is working or before acceptance, the suggestion is marked stale and cannot be applied.
 
-### Visual plan for a beat
+### Whole-spine visual takes
 
-Open the **Visual Layer** tab for the currently selected segment. Choose a recipe from the tracked [Visual Animations Library](../../libraries/visual_animations_library/README.md), or keep **Custom plan (no library recipe)**, then choose **Create visual JSON**. The workbench creates `audio/visuals/<segment-id>.json` in the selected project. The stable manifest ID is used for the filename and recorded inside the plan; recipes remain references to library entries rather than copied code.
+Use **Visual Layer** to create a take for an entire video treatment, not just the currently selected beat. A project can have several alternatives (`v_layer_1`, `v_layer_2`, and so on); each take is an independent JSON manifest mapping narration segment IDs to that take's creative intent and implementation references. The workbench creates a pending entry for every current segment, selects the new take, and never replaces an existing take with the same ID.
 
-Each beat gets one file. A second create request will not replace it; use **Open JSON** to open the existing file in the operating system's default app. After editing it outside the workbench, use **Reload manifest** to refresh its displayed status. If the approved spoken words later change, the workbench marks the plan **Needs review** using its saved source-text SHA-256. It does not rewrite the plan. Invalid, oversized, or unavailable plan files are reported instead of being treated as rendered visuals.
+```text
+video-project/
+├── audio/
+│   └── narration_manifest.json
+└── visual_layer/
+    ├── selected_take.json
+    ├── v_layer_1.json
+    ├── v_layer_2.json
+    ├── v_layer_1/
+    │   └── opening-hook/
+    │       ├── elements/
+    │       ├── animations/
+    │       └── scene.js
+    └── v_layer_2/
+        └── opening-hook/
+            └── scene.py
+```
+
+The manifests are the plan and the map. `selected_take.json` stores the selected manifest filename; it is not another take. A segment entry identifies its exact narration ID, visual intent, approved-text SHA-256, optional renderer (`effectcraft`, `manim`, or `gsap`), implementation folder/entry file, and optional library reference. Elements and animations are normally custom to the video project. The workbench checks paths remain project-relative and do not cross symlinks; it does not execute the referenced code.
+
+In **Visual Layer**, select a take to apply it across the whole narration spine. The selected beat panel shows that take's entry and status. **Create a new visual take** scaffolds a separate take; open the manifest in the default editor to add intent, renderer, and implementation paths. Use **Reload manifest** after external edits. A take is complete only when each active narration segment has a valid existing implementation entry. Pending entries, missing implementation files, invalid JSON, and text-hash mismatches are reported. Reordering beats keeps the mapping by stable ID; a newly added beat is pending until the take manifest is updated.
+
+The take schema is [`visual_take.schema.json`](visual_take.schema.json); the selection-pointer schema is [`selected_visual_take.schema.json`](selected_visual_take.schema.json). Schema version is `1`. Do not place absolute machine paths or whole programs in JSON. Creating, selecting, or opening a take does not render frames or change narration. The workbench does not enforce renderer-specific launch conventions yet.
+
+### Music and sound-effects mappings
+
+For the selected beat, **Music Layer** creates `audio/music/<segment-id>.json`; **SoundEffects Layer** creates `audio/sfx/<segment-id>.json`. Each create is atomic and refuses to overwrite a file. Open the JSON in the default editor, add cues, and reload the workbench to refresh cue count and status. Mapping a beat does not create files for other beats.
+
+Each file records `schema_version`, `layer`, `segment_id`, `source_text_sha256`, and a `cues` array. An empty array is valid. A cue requires a project-relative `asset_path` and `start_seconds` relative to the narration segment. Optional `source_offset_seconds` trims into the source asset, optional positive `duration_seconds` limits the cue, and optional `gain_db` must be between -60 and +12. Music and SFX have separate schemas: [`music_mapping.schema.json`](music_mapping.schema.json) and [`sfx_mapping.schema.json`](sfx_mapping.schema.json). The workbench validates path shape and rejects traversal/symlinks, but it does not verify the asset exists, source/license, or whether use is permitted. Review sources separately and keep any Asset Finder receipt with its asset.
+
+Changing the approved words does not rewrite a visual take or audio mapping. The workbench marks entries whose saved text hash no longer matches as **Needs review**. Music/SFX mapping is storage only: it does not trigger Asset Finder, download media, play cues, mix audio, or render video. Timing behavior for future composition, including fades, overlaps, and response to narration-length changes, remains unspecified.
+
+### Legacy per-beat visual plan
+
+The older per-beat recipe-plan workflow is preserved under **Legacy per-beat visual plan** details in the **Visual Layer** tab. It writes `audio/visuals/<segment-id>.json` in the selected project. New whole-video visual work should use the `visual_layer/<take-id>.json` manifests described above.
+
+Each beat gets one file. A second create request will not replace it; use **Open legacy JSON** to open the existing file in the operating system's default app. After editing it outside the workbench, use **Reload manifest** to refresh its displayed status. If the approved spoken words later change, the workbench marks the plan **Needs review** using its saved source-text SHA-256. It does not rewrite the plan. Invalid, oversized, or unavailable plan files are reported instead of being treated as rendered visuals.
 
 The plan's version-1 format is defined in [`visual_plan.schema.json`](visual_plan.schema.json). Custom plans use `null` for both recipe fields; library plans require both a recipe ID and title. The workbench also checks that the recipe ID still exists in the local library. The file is renderer-neutral planning data only: creating or editing it does not change the narration manifest, regenerate audio, render frames, or add it to a video. Rendering and in-app visual editing remain separate future work.
 
@@ -140,7 +176,7 @@ The work queue is saved to `audio/.workbench/workbench_state.json`. It stores se
 
 Quick preview uses the existing Windows SAPI preview and creates no audio file. It is unavailable on macOS and Linux; the workbench reports that limit without choosing another engine. Persistent F5-TTS generation remains available on systems where the user has installed its compatible environment. The app does not bundle F5-TTS, models, or voice recordings.
 
-The web API exposes only the manifest-backed segment fields needed by the interface, parent folder paths for discovered take files, confined take/assembled WAV playback routes, and visual-plan operations constrained to the selected project's `audio/visuals/` folder. It does not expose a general path or file browser. Never change the bind address from loopback.
+The web API exposes only the manifest-backed segment fields needed by the interface, parent folder paths for discovered narration takes, confined take/assembled WAV playback routes, whole-spine visual-take operations constrained to the selected video project, per-segment music/SFX JSON operations constrained to the audio folder, and legacy visual-plan operations constrained to `audio/visuals/`. It does not expose a general path or file browser. Never change the bind address from loopback.
 
 ### Data boundary
 
@@ -148,7 +184,10 @@ The web API exposes only the manifest-backed segment fields needed by the interf
 |---|---|---|
 | Approved script, segment order/status, voice style, TTS settings | Project `audio/narration_manifest.json` | Text and delivery settings affect take fingerprints; array order and status affect the assembly hash |
 | Editorial notes and suggestions | Project `audio/.workbench/workbench_state.json` | No |
-| Per-beat visual animation plans | Project `audio/visuals/<segment-id>.json` | No |
+| Whole-spine visual takes and selection | Project-root `visual_layer/<take-id>.json` and `visual_layer/selected_take.json` | No |
+| Legacy per-beat visual plans | Project `audio/visuals/<segment-id>.json` | No |
+| Music cue mappings | Project `audio/music/<segment-id>.json` | No |
+| Sound-effects cue mappings | Project `audio/sfx/<segment-id>.json` | No |
 | Selected takes, receipts, assembly, and performance records | Project audio folders managed by the existing generator | Existing generator behavior |
 | Generic editing rules and response schema | Public tool folder in this repository | No project data |
 

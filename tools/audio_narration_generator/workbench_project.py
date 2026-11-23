@@ -15,6 +15,7 @@ from typing import Any
 
 import generate_narration as narration
 from workbench_audio import AudioReadMixin
+from workbench_layer_mappings import AudioLayerMappingMixin
 from workbench_common import (
     AI_GUIDE_PATH, MAX_NOTE_CHARS, MAX_TEXT_CHARS, MAX_TITLE_CHARS,
     MAX_TTS_VALUES, MAX_WORK_STATE_BYTES,
@@ -24,8 +25,8 @@ from workbench_common import (
 from workbench_visuals import VisualPlanMixin
 
 
-class Project(VisualPlanMixin, AudioReadMixin):
-    """Manifest and private work queue, with focused audio and visual helpers."""
+class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
+    """Manifest and private work queue, with focused audio and layer helpers."""
 
     def __init__(self, manifest_path: Path):
         try:
@@ -149,6 +150,14 @@ class Project(VisualPlanMixin, AudioReadMixin):
                 self.write_state(state)
             visual_recipes = self._recipe_catalog()
             recipes_by_id = {item["id"]: item["title"] for item in visual_recipes}
+            visual_layer = self.visual_layer_payload(data)
+            visual_take_document = None
+            selected_visual_take = visual_layer.get("selected_take") or {}
+            if selected_visual_take.get("take_id") and selected_visual_take.get("status") != "invalid":
+                try:
+                    visual_take_document = self._visual_take_document(selected_visual_take["take_id"], data)
+                except WorkbenchError:
+                    pass
             segments = []
             for index, segment in enumerate(data["segments"]):
                 segment_id = segment["id"]
@@ -191,6 +200,9 @@ class Project(VisualPlanMixin, AudioReadMixin):
                     "takes": self._segment_takes(data, segment),
                     "work": self._work_summary(work, segment["text"]),
                     "visual_plan": self._visual_plan_summary(segment, recipes_by_id),
+                    "visual_take_segment": self.visual_take_segment_payload(segment, visual_layer, visual_take_document),
+                    "music_mapping": self._audio_mapping_summary("music", segment),
+                    "sfx_mapping": self._audio_mapping_summary("sfx", segment),
                 })
             assembled = self._latest_assembly()
             assembly_current = (
@@ -204,6 +216,7 @@ class Project(VisualPlanMixin, AudioReadMixin):
                 "manifest_hash": manifest_digest,
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
                 "visual_recipes": visual_recipes,
+                "visual_layer": visual_layer,
                 "tts_defaults": {key: value for key, value in data["settings"].items() if key in MAX_TTS_VALUES},
                 "pause_ms": data["settings"].get("pause_ms", 350),
                 "segments": segments,

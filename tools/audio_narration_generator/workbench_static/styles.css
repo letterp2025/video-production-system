@@ -17,6 +17,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; margin: 0; min-width: 320px; min-height: 0; overflow: hidden; background: var(--paper); }
 button, input, textarea, select { font: inherit; color: inherit; }
 button, select, summary { cursor: pointer; }
@@ -336,4 +337,45 @@ audio { width: 100%; height: 34px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+.take-workspace { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 16px 20px; max-width: 760px; padding: 26px 0 0 16px; border-left: 4px solid var(--cyan); }
+.take-workspace > .visual-plan-actions { min-height: 39px; }
+.layer-file-summary, .selected-layer-entry, .create-take-details { grid-column: 1 / -1; min-width: 0; }
+.layer-file-summary { padding: 16px 18px; background: var(--sheet); border: 1px solid var(--line); box-shadow: 4px 4px 0 #e2e2dc; }
+.layer-file-summary strong { display: block; font-size: 15px; }
+.layer-file-summary p { margin: 7px 0 10px; color: var(--muted); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.selected-layer-entry { padding: 18px 0 15px; border-bottom: 1px solid var(--line); }
+.selected-layer-entry .section-kicker { margin: 0 0 7px; }
+.selected-layer-entry h2 { margin: 0 0 8px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", "Segoe UI", sans-serif; font-size: 23px; letter-spacing: -.035em; }
+.layer-entry-intent { margin: 12px 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.layer-entry-details { display: grid; gap: 8px; margin: 15px 0 0; font-size: 11px; }
+.layer-entry-details > div { display: grid; grid-template-columns: minmax(125px, .4fr) minmax(0, 1fr); gap: 10px; }
+.layer-entry-details dt { color: var(--muted); font-weight: 700; }
+.layer-entry-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.create-take-details, .legacy-plan-details { border-top: 1px solid var(--line); padding-top: 13px; }
+.create-take-details > summary, .legacy-plan-details > summary { width: fit-content; color: #176a7a; font-size: 12px; font-weight: 750; cursor: pointer; }
+.create-take-fields { display: grid; gap: 8px; padding-top: 16px; }
+.create-take-fields label { color: var(--muted); font-size: 11px; font-weight: 750; }
+.create-take-fields label small { display: block; margin-top: 3px; font-weight: 400; }
+.create-take-fields input, .create-take-fields textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); background: var(--sheet); font: inherit; font-size: 13px; }
+.create-take-fields textarea { resize: vertical; }
+.create-take-fields button { justify-self: start; margin-top: 5px; }
+.legacy-plan-details { margin-top: 26px; }
+.legacy-plan-note { max-width: 680px; margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.legacy-plan-details .visual-plan-form { padding-top: 8px; }
+.mapping-workspace { max-width: 720px; margin-top: 30px; padding: 21px 0 21px 16px; border-left: 4px solid var(--cyan); }
+.mapping-workspace .visual-plan-status { display: block; margin-bottom: 10px; font-size: 13px; }
+.mapping-workspace .layer-segment-context { margin-bottom: 17px; }
+.mapping-workspace .visual-plan-actions { justify-content: flex-start; }
+.mapping-workspace .button-visual { white-space: normal; }
+
+@media (max-width: 950px) {
+  .take-workspace { grid-template-columns: minmax(0, 1fr); }
+  .take-workspace > .visual-plan-actions { justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .take-workspace { gap: 14px; padding-left: 12px; }
+  .layer-entry-details > div { grid-template-columns: minmax(110px, .45fr) minmax(0, 1fr); }
+  .mapping-workspace { padding-left: 12px; }
 }

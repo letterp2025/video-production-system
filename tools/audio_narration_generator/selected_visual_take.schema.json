@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Selected visual take pointer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "selected_take"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "selected_take": { "type": "string", "pattern": "^v_layer_[a-z0-9][a-z0-9_-]{0,48}\\.json$" }
+  }
+}

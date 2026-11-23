@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Video Production System visual take",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "take_id", "title", "creative_direction", "segments"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "take_id": { "type": "string", "pattern": "^v_layer_[a-z0-9][a-z0-9_-]{0,48}$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "creative_direction": { "type": "string", "minLength": 1, "maxLength": 24000 },
+    "segments": {
+      "type": "object",
+      "maxProperties": 2000,
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+      "additionalProperties": { "$ref": "#/$defs/segment" }
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference"],
+      "properties": {
+        "visual_intent": { "type": "string", "maxLength": 24000 },
+        "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "renderer": { "enum": ["effectcraft", "manim", "gsap", null] },
+        "implementation": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["folder", "entry_file"],
+              "properties": {
+                "folder": { "type": "string", "minLength": 1, "maxLength": 1000 },
+                "entry_file": { "type": "string", "minLength": 1, "maxLength": 1000 }
+              }
+            }
+          ]
+        },
+        "library_reference": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["library", "entry_id"],
+              "properties": {
+                "library": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "entry_id": { "type": "string", "minLength": 1, "maxLength": 160 }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

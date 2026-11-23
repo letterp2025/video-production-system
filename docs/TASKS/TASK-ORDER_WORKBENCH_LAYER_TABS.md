@@ -6,7 +6,7 @@
 
 - Added four top-level layer tabs for the selected beat. Scratchpad and F5-TTS remain nested within Script and Narration Layer.
 - Moved recipe selection, visual-plan creation/opening, and plan status into Visual Layer. The global header now holds project context and narration playback only.
-- Music Layer and SoundEffects Layer show the selected beat and explain the planned JSON mapping workflow. Their mapping editors and audio composition are not implemented by WLT-001.
+- Music Layer and SoundEffects Layer show the selected beat and expose the create/open/status workflow for their per-beat JSON mappings. The JSON files open in the default editor; in-app cue editing and audio composition are not implemented.
 - Added arrow-key, Home, and End tab navigation with selected-tab semantics. The narrow layout changes from four columns to two and then one.
 - Updated the workbench guide to describe the new navigation. Automated tests were not run for this task.
 
@@ -35,8 +35,8 @@ The left beat list remains the shared selector. Switching a top-level tab change
 
 1. Select a beat from the existing sequence list.
 2. Select **Script and Narration Layer** to edit the segment title and spoken words, use playback, open **Scratchpad**, or open **F5-TTS** for takes and delivery settings.
-3. Select **Visual Layer** to view the selected beat's visual-plan status and use its existing create/open workflow.
-4. Select **Music Layer** or **SoundEffects Layer** to view or create that beat's corresponding mapping JSON when those features are implemented.
+3. Select **Visual Layer** to view/select a whole-spine visual take and inspect its entry for this beat; the older per-beat plan workflow remains available under a legacy disclosure.
+4. Select **Music Layer** or **SoundEffects Layer** to view mapping status or create/open that beat's corresponding JSON file.
 5. Switch layers or beats. Each workspace reflects the current selection and reports whether its data is missing, saved, needs review, or invalid as applicable.
 
 ## Layout requirements
@@ -55,16 +55,16 @@ The left beat list remains the shared selector. Switching a top-level tab change
 | Workspace | Data source |
 |---|---|
 | Script and Narration Layer | Existing project `audio/narration_manifest.json`, selected narration takes, and temporary work queue |
-| Visual Layer | Existing project `audio/visuals/<segment-id>.json` plan |
-| Music Layer | Proposed project `audio/music/<segment-id>.json` mapping; implementation is covered by the segment-layers task order |
-| SoundEffects Layer | Proposed project `audio/sfx/<segment-id>.json` mapping; implementation is covered by the segment-layers task order |
+| Visual Layer | Canonical project-root `visual_layer/<take-id>.json` whole-spine manifests; earlier `audio/visuals/<segment-id>.json` plans remain available as legacy |
+| Music Layer | Optional project `audio/music/<segment-id>.json` cue mapping |
+| SoundEffects Layer | Optional project `audio/sfx/<segment-id>.json` cue mapping |
 
 Tabs are navigation only; they do not create a second source of truth. Each layer reads and writes only its own data using the safety and validation rules in its owning task order.
 
 ## Implementation phases
 
 1. **Navigation structure:** establish four top-level layer workspaces and nest Scratchpad/F5-TTS under Script and Narration Layer. Keep current actions intact while moving the visual controls into Visual Layer.
-2. **Layer integration:** connect Visual Layer to its existing plan status and create/open API; reserve Music Layer and SoundEffects Layer for their per-segment JSON workflows as specified in the segment-layers task order. Show useful empty states until a mapping exists.
+2. **Layer integration:** connect Visual Layer to whole-spine take selection/status and retain legacy per-beat plans. Connect Music and SoundEffects to their per-segment JSON create/open/status workflows as specified in the segment-layers task order.
 3. **Responsive and accessibility pass:** verify tab hierarchy, selected states, focus management, keyboard operation, and narrow-window behavior.
 4. **Regression coverage and docs:** test layer/beat switching, retained nested tab behavior, existing script/audio functions, visual plans, and the music/SFX integration when available. Update the workbench guide with the implemented navigation.
 
@@ -73,9 +73,9 @@ Tabs are navigation only; they do not create a second source of truth. Each laye
 - The four top-level tabs appear with the requested labels: **Script and Narration Layer**, **Visual Layer**, **Music Layer**, and **SoundEffects Layer**.
 - **Scratchpad** and **F5-TTS** are visible only within the Script and Narration Layer workspace as subordinate navigation.
 - The selected beat remains apparent and consistent when switching among layers; all displayed data belongs to its stable segment ID.
-- The Visual Layer contains the existing recipe/create/open/status controls, and the global header no longer contains those per-beat controls.
+- Visual take selection and selected-beat status live in Visual Layer, with the legacy per-beat plan workflow available there; the global header has no per-beat creation controls.
 - Existing narration editing, playback, Scratchpad, take review, and visual-plan operations continue to work.
-- Music and SoundEffects workspaces provide clear empty states before mappings exist and connect to their per-segment JSON implementation when delivered.
+- Music and SoundEffects workspaces provide clear empty states and create/open/status for their own selected-beat JSON mapping; neither searches for assets nor plays/mixes audio.
 - The navigation works with keyboard and assistive technology and remains usable at desktop and narrow viewport sizes.
 
 ## Boundaries

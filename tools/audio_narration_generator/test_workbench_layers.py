@@ -1,0 +1,375 @@
+"""Tests for whole-spine visual takes and per-beat audio-layer mappings."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import threading
+import unittest
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
+from urllib.request import Request, urlopen
+
+import workbench
+import workbench_layer_mappings
+import workbench_visual_takes
+from workbench_layer_contracts import validate_audio_mapping, validate_visual_take
+
+
+class LayerProjectTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.audio = self.root / "audio"
+        self.audio.mkdir()
+        self.manifest = self.audio / "narration_manifest.json"
+        self.data = {
+            "project": "layers-test",
+            "project_status": "in_progress",
+            "voice": {"reference_audio": "reference.wav", "reference_text": "A short reference transcript."},
+            "voice_styles": {},
+            "settings": {"speed": 1.0, "pause_ms": 350},
+            "selected_takes": {},
+            "segments": [
+                {"id": "opening-hook", "title": "Opening hook", "status": "active", "text": "Start with a question."},
+                {"id": "next-beat", "title": "Next beat", "status": "active", "text": "Then explain the result."},
+                {"id": "inactive-beat", "title": "Inactive beat", "status": "inactive", "text": "Maybe use this later."},
+            ],
+        }
+        self.write_manifest()
+        self.project = workbench.Project(self.manifest)
+
+    def write_manifest(self):
+        self.manifest.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def create_take(self, take_id="v_layer_1"):
+        digest = self.project.state_payload()["manifest_hash"]
+        return self.project.create_visual_take(take_id, take_id.replace("_", " ").title(), "A coherent visual treatment across the full narration spine.", digest)
+
+    def test_take_creation_creates_full_spine_skeleton_and_selects_without_touching_narration(self):
+        manifest_before = self.manifest.read_bytes()
+        result = self.create_take()
+        path = self.root / "visual_layer" / "v_layer_1.json"
+        pointer = self.root / "visual_layer" / "selected_take.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(result["relative_path"], "visual_layer/v_layer_1.json")
+        self.assertEqual(set(document["segments"]), {segment["id"] for segment in self.data["segments"]})
+        self.assertEqual(json.loads(pointer.read_text(encoding="utf-8")), {"schema_version": 1, "selected_take": "v_layer_1.json"})
+        self.assertEqual(self.manifest.read_bytes(), manifest_before)
+        self.assertEqual(result["state"]["visual_layer"]["selected_take_id"], "v_layer_1")
+        self.assertEqual(result["state"]["visual_layer"]["selected_take"]["status"], "in_progress")
+        self.assertEqual(result["state"]["segments"][0]["visual_take_segment"]["status"], "pending")
+        self.assertNotIn(str(self.root), json.dumps(result["state"]))
+
+    def test_take_switching_preserves_each_take_and_uses_no_library_requirement(self):
+        self.create_take("v_layer_1")
+        self.create_take("v_layer_2")
+        first = self.root / "visual_layer" / "v_layer_1.json"
+        second = self.root / "visual_layer" / "v_layer_2.json"
+        first_before = first.read_bytes()
+        second_before = second.read_bytes()
+        result = self.project.select_visual_take("v_layer_1")
+        self.assertEqual(result["visual_layer"]["selected_take_id"], "v_layer_1")
+        self.assertEqual(first.read_bytes(), first_before)
+        self.assertEqual(second.read_bytes(), second_before)
+        with self.assertRaisesRegex(workbench.WorkbenchError, "already exists"):
+            self.create_take("v_layer_1")
+
+    def test_editing_one_take_does_not_change_an_alternative_or_legacy_plan(self):
+        self.create_take("v_layer_1")
+        self.create_take("v_layer_2")
+        first = self.root / "visual_layer" / "v_layer_1.json"
+        second = self.root / "visual_layer" / "v_layer_2.json"
+        legacy = self.project.create_visual_plan("opening-hook", None, self.project.state_payload()["manifest_hash"])
+        legacy_path = self.audio / "visuals" / "opening-hook.json"
+        second_before = second.read_bytes()
+        legacy_before = legacy_path.read_bytes()
+        edited = json.loads(first.read_text(encoding="utf-8"))
+        edited["segments"]["opening-hook"]["visual_intent"] = "Make only this take feel like a paper collage."
+        first.write_text(json.dumps(edited, indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(second.read_bytes(), second_before)
+        self.assertEqual(legacy_path.read_bytes(), legacy_before)
+        self.assertEqual(legacy["relative_path"], "visuals/opening-hook.json")
+
+    def test_take_tracks_stable_ids_after_reorder_and_new_active_beat_is_pending(self):
+        self.create_take()
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.reorder_segment("next-beat", "opening-hook", "before", digest)
+        reordered = self.project.state_payload()
+        self.assertEqual(reordered["segments"][0]["id"], "next-beat")
+        self.assertEqual(reordered["segments"][0]["visual_take_segment"]["status"], "pending")
+        digest = reordered["manifest_hash"]
+        added = self.project.insert_segment("opening-hook", "A new beat", "A newly approved line.", "active", digest)
+        inserted = next(item for item in added["state"]["segments"] if item["id"] == added["segment_id"])
+        self.assertEqual(inserted["visual_take_segment"]["status"], "pending")
+        selected = added["state"]["visual_layer"]["selected_take"]
+        self.assertEqual(selected["missing_active_segment_ids"], [added["segment_id"]])
+
+    def test_ready_implementation_is_project_confined_and_text_changes_need_review(self):
+        self.create_take()
+        take_path = self.root / "visual_layer" / "v_layer_1.json"
+        take = json.loads(take_path.read_text(encoding="utf-8"))
+        entry = take["segments"]["opening-hook"]
+        entry.update({
+            "visual_intent": "Animate a retro title card.",
+            "renderer": "gsap",
+            "implementation": {
+                "folder": "visual_layer/v_layer_1/opening-hook",
+                "entry_file": "visual_layer/v_layer_1/opening-hook/scene.js",
+            },
+        })
+        scene = self.root / "visual_layer" / "v_layer_1" / "opening-hook" / "scene.js"
+        scene.parent.mkdir(parents=True)
+        scene.write_text("// Renderer code is referenced, never executed by the workbench.\n", encoding="utf-8")
+        take_path.write_text(json.dumps(take, indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(self.project.state_payload()["segments"][0]["visual_take_segment"]["status"], "saved")
+        original_is_symlink = Path.is_symlink
+
+        def pretend_entry_is_symlink(candidate):
+            return candidate == scene or original_is_symlink(candidate)
+
+        with mock.patch.object(Path, "is_symlink", pretend_entry_is_symlink):
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
+        current_hash = self.project.state_payload()["manifest_hash"]
+        self.project.save_segment("opening-hook", {"text": "Start with a different question."}, current_hash)
+        changed = self.project.state_payload()
+        self.assertEqual(changed["segments"][0]["visual_take_segment"]["status"], "needs_review")
+        self.assertEqual(changed["visual_layer"]["selected_take"]["status"], "needs_review")
+
+    def test_invalid_take_path_is_reported_and_can_be_opened_for_repair(self):
+        self.create_take()
+        path = self.root / "visual_layer" / "v_layer_1.json"
+        take = json.loads(path.read_text(encoding="utf-8"))
+        take["segments"]["opening-hook"].update({
+            "renderer": "manim",
+            "implementation": {"folder": "../../outside", "entry_file": "../../outside/scene.py"},
+        })
+        path.write_text(json.dumps(take), encoding="utf-8")
+        state = self.project.state_payload()
+        self.assertEqual(state["visual_layer"]["selected_take"]["status"], "invalid")
+        with mock.patch.object(self.project, "_open_layer_file") as open_file:
+            self.project.open_visual_take("v_layer_1")
+            open_file.assert_called_once_with(path, "visual take")
+        with self.assertRaisesRegex(ValueError, "must stay inside"):
+            validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
+
+    def test_invalid_renderer_type_is_reported_as_a_validation_error(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.create_visual_take("v_layer_1", "Retro", "A retro treatment.", digest)
+        path = self.root / "visual_layer" / "v_layer_1.json"
+        take = json.loads(path.read_text(encoding="utf-8"))
+        take["segments"]["opening-hook"]["renderer"] = []
+        path.write_text(json.dumps(take), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "renderer.*effectcraft"):
+            validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
+
+    def test_visual_take_creation_rejects_invalid_id_and_stale_manifest_hash(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        with self.assertRaisesRegex(workbench.WorkbenchError, "Take ID"):
+            self.project.create_visual_take("../outside", "Invalid", "Direction", digest)
+        with self.assertRaisesRegex(workbench.WorkbenchError, "changed in another editor"):
+            self.project.create_visual_take("v_layer_1", "Take", "Direction", "0" * 64)
+        self.assertFalse((self.root / "visual_layer").exists())
+
+    def test_music_and_sfx_mappings_are_independent_atomic_and_text_aware(self):
+        manifest_before = self.manifest.read_bytes()
+        digest = self.project.state_payload()["manifest_hash"]
+        music = self.project.create_audio_mapping("music", "opening-hook", digest)
+        sfx = self.project.create_audio_mapping("sfx", "opening-hook", digest)
+        music_path = self.audio / "music" / "opening-hook.json"
+        sfx_path = self.audio / "sfx" / "opening-hook.json"
+        self.assertEqual(music["relative_path"], "music/opening-hook.json")
+        self.assertEqual(sfx["relative_path"], "sfx/opening-hook.json")
+        self.assertEqual(json.loads(music_path.read_text(encoding="utf-8"))["cues"], [])
+        self.assertEqual(self.manifest.read_bytes(), manifest_before)
+        before = music_path.read_bytes()
+        with self.assertRaisesRegex(workbench.WorkbenchError, "already exists"):
+            self.project.create_audio_mapping("music", "opening-hook", digest)
+        self.assertEqual(music_path.read_bytes(), before)
+        refreshed = self.project.state_payload()
+        self.assertEqual(refreshed["segments"][0]["music_mapping"]["status"], "saved")
+        self.assertEqual(refreshed["segments"][0]["sfx_mapping"]["status"], "saved")
+
+    def test_audio_mapping_cues_validate_project_paths_timing_and_gain(self):
+        self.create_take()
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.create_audio_mapping("music", "opening-hook", digest)
+        path = self.audio / "music" / "opening-hook.json"
+        mapping = json.loads(path.read_text(encoding="utf-8"))
+        mapping["cues"] = [{
+            "asset_path": "assets/music/theme.wav",
+            "start_seconds": 0,
+            "source_offset_seconds": 1.5,
+            "duration_seconds": 12,
+            "gain_db": -6,
+        }]
+        validate_audio_mapping(mapping, "music", "opening-hook", self.root)
+        path.write_text(json.dumps(mapping), encoding="utf-8")
+        payload = self.project.state_payload()
+        self.assertEqual(payload["segments"][0]["music_mapping"]["cue_count"], 1)
+        self.assertEqual(payload["segments"][0]["music_mapping"]["status"], "saved")
+        mapping["cues"][0]["asset_path"] = "../../outside.wav"
+        with self.assertRaisesRegex(ValueError, "inside the video project"):
+            validate_audio_mapping(mapping, "music", "opening-hook", self.root)
+        path.write_text(json.dumps(mapping), encoding="utf-8")
+        self.assertEqual(self.project.state_payload()["segments"][0]["music_mapping"]["status"], "invalid")
+
+    def test_audio_mapping_text_change_requires_review_without_rewriting_file(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.create_audio_mapping("sfx", "opening-hook", digest)
+        path = self.audio / "sfx" / "opening-hook.json"
+        before = path.read_bytes()
+        self.project.save_segment("opening-hook", {"text": "The approved narration changed."}, digest)
+        result = self.project.state_payload()
+        self.assertEqual(result["segments"][0]["sfx_mapping"]["status"], "needs_review")
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_malformed_oversized_and_symlinked_mappings_are_reported_invalid(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        self.project.create_audio_mapping("music", "opening-hook", digest)
+        path = self.audio / "music" / "opening-hook.json"
+        path.write_text("{bad json", encoding="utf-8")
+        self.assertEqual(self.project.state_payload()["segments"][0]["music_mapping"]["status"], "invalid")
+        path.write_text(json.dumps({
+            "schema_version": 1, "layer": "music", "segment_id": "opening-hook",
+            "source_text_sha256": workbench.text_hash(self.data["segments"][0]["text"]), "cues": [],
+        }), encoding="utf-8")
+        original_is_symlink = Path.is_symlink
+
+        def pretend_mapping_is_symlink(candidate):
+            return candidate == path or original_is_symlink(candidate)
+
+        with mock.patch.object(Path, "is_symlink", pretend_mapping_is_symlink):
+            self.assertEqual(self.project.state_payload()["segments"][0]["music_mapping"]["status"], "invalid")
+        with mock.patch.object(workbench_visual_takes, "MAX_LAYER_JSON_BYTES", 4), mock.patch.object(workbench_layer_mappings, "MAX_LAYER_JSON_BYTES", 4):
+            mapping = self.project.state_payload()["segments"][0]["music_mapping"]
+            self.assertEqual(mapping["status"], "invalid")
+            self.assertFalse(mapping["can_open"])
+
+    def test_concurrent_mapping_creates_never_overwrite(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        barrier = threading.Barrier(2)
+        outcomes = []
+
+        def create():
+            barrier.wait()
+            try:
+                outcomes.append(self.project.create_audio_mapping("sfx", "opening-hook", digest))
+            except workbench.WorkbenchError as exc:
+                outcomes.append(exc)
+
+        threads = [threading.Thread(target=create) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+        self.assertEqual(sum(isinstance(item, dict) for item in outcomes), 1)
+        self.assertEqual(sum(isinstance(item, workbench.WorkbenchError) for item in outcomes), 1)
+        self.assertTrue((self.audio / "sfx" / "opening-hook.json").is_file())
+
+
+class LayerHttpTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.audio = self.root / "audio"
+        self.audio.mkdir()
+        self.manifest = self.audio / "narration_manifest.json"
+        self.manifest.write_text(json.dumps({
+            "project": "layer-http",
+            "project_status": "in_progress",
+            "voice": {"reference_audio": "reference.wav", "reference_text": "A short reference transcript."},
+            "voice_styles": {},
+            "settings": {"speed": 1.0, "pause_ms": 350},
+            "selected_takes": {},
+            "segments": [{"id": "beat-one", "title": "Beat one", "status": "active", "text": "First words."}],
+        }), encoding="utf-8")
+        self.project = workbench.Project(self.manifest)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), workbench.create_handler(self.project, None, "python"))
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.close_server)
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+
+    def close_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+
+    def post(self, path, payload):
+        request = Request(self.base + path, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urlopen(request) as response:
+            return response.status, json.loads(response.read())
+
+    def test_layer_routes_create_select_and_open_confined_files(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        status, result = self.post("/api/visual-takes/create", {
+            "take_id": "v_layer_1", "title": "Retro", "creative_direction": "Bold retro movement.", "manifest_hash": digest,
+        })
+        self.assertEqual(status, 201)
+        self.assertEqual(result["state"]["visual_layer"]["selected_take_id"], "v_layer_1")
+        status, result = self.post("/api/layers/music/create", {"segment_id": "beat-one", "manifest_hash": digest})
+        self.assertEqual(status, 201)
+        self.assertEqual(result["relative_path"], "music/beat-one.json")
+        with mock.patch.object(self.project, "_open_layer_file") as open_file:
+            status, _ = self.post("/api/layers/music/open", {"segment_id": "beat-one"})
+            self.assertEqual(status, 200)
+            open_file.assert_called_once_with(self.audio / "music" / "beat-one.json", "music mapping")
+        status, result = self.post("/api/visual-takes/select", {"take_id": "v_layer_1"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["state"]["visual_layer"]["selected_take_id"], "v_layer_1")
+
+    def test_layer_routes_reject_traversal_and_invalid_segment_ids(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        for route, payload in (
+            ("/api/visual-takes/create", {"take_id": "../escape", "title": "Bad", "creative_direction": "Bad", "manifest_hash": digest}),
+            ("/api/layers/sfx/create", {"segment_id": "../escape", "manifest_hash": digest}),
+        ):
+            request = Request(self.base + route, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+            with self.assertRaises(Exception):
+                urlopen(request)
+        self.assertFalse((self.root / "visual_layer").exists())
+        self.assertFalse((self.audio / "sfx").exists())
+
+
+class LayerInterfaceContractTest(unittest.TestCase):
+    def test_layer_workspace_markup_has_labels_status_and_narrow_layout_rules(self):
+        tool_dir = Path(workbench.__file__).resolve().parent
+        html = (tool_dir / "workbench_static" / "index.html").read_text(encoding="utf-8")
+        css = (tool_dir / "workbench_static" / "styles.css").read_text(encoding="utf-8")
+        app = (tool_dir / "workbench_static" / "app.js").read_text(encoding="utf-8")
+        for element_id in (
+            "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input",
+            "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping",
+            "create-sfx-mapping", "open-sfx-mapping",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn('role="tablist" aria-label="Production layers"', html)
+        self.assertIn('aria-live="polite"', html)
+        self.assertIn("@media (max-width: 720px)", css)
+        self.assertIn("@media (max-width: 420px)", css)
+        self.assertIn(".take-workspace { grid-template-columns: minmax(0, 1fr);", css)
+        self.assertIn("[hidden] { display: none !important; }", css)
+        self.assertIn("createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;", app)
+        self.assertIn("if (state.busy || isDirty()) return toast(\"Save beat changes before creating a visual take.\");", app)
+        self.assertIn("if (isDirty()) return toast(\"Save beat changes before creating a layer mapping.\");", app)
+        self.assertNotIn("eval(", app)
+        self.assertNotIn("new Function(", app)
+
+    def test_layer_schema_files_are_valid_json(self):
+        tool_dir = Path(workbench.__file__).resolve().parent
+        for schema_name in (
+            "visual_take.schema.json", "selected_visual_take.schema.json",
+            "music_mapping.schema.json", "sfx_mapping.schema.json",
+        ):
+            with self.subTest(schema=schema_name):
+                schema = json.loads((tool_dir / schema_name).read_text(encoding="utf-8"))
+                self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
+
+
+if __name__ == "__main__":
+    unittest.main()

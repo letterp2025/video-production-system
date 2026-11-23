@@ -1,15 +1,19 @@
 # Task Order: Visual Animation Plans Per Segment
 
-**Task ID:** VAP-001 | **Status:** Implemented | **Last updated:** 2026-11-23
+**Task ID:** VAP-001 | **Status:** Implemented (legacy workflow) | **Last updated:** 2026-11-23
 
 ## Implementation record
 
-- The workbench header now identifies the selected beat, offers tracked `ANM-*` recipes plus a custom-plan option, and creates one plan at `audio/visuals/<segment-id>.json`.
+- The original per-beat workflow creates one plan at `audio/visuals/<segment-id>.json` with tracked `ANM-*` recipe references or a custom-plan option. It is now under **Legacy per-beat visual plan** details in Visual Layer, not in the global header.
 - The version-1 schema is tracked at [`visual_plan.schema.json`](../../tools/audio_narration_generator/visual_plan.schema.json). Creation is atomic and non-overwriting; the workbench checks the current manifest hash, rejects unsafe paths/symlinks, and opens an existing plan in the operating system's default app.
 - Each plan stores the selected segment ID, title, and approved-text SHA-256. A text hash mismatch reports **Needs review** without changing the file. The workflow does not render or modify narration/audio.
-- Workbench tests and user documentation cover this feature in [`tools/audio_narration_generator/README.md`](../../tools/audio_narration_generator/README.md#visual-plan-for-a-beat).
+- Workbench tests and user documentation cover this legacy workflow in [`tools/audio_narration_generator/README.md`](../../tools/audio_narration_generator/README.md#legacy-per-beat-visual-plan).
 - The renderer/preview/editor integration remains a separate follow-up and is not part of VAP-001.
-- **Architecture follow-up:** VAP-001 describes the shipped per-segment plan-file implementation. The target is multiple project-root `visual_layer/<take-id>.json` manifests, one per whole-spine visual take. Each manifest combines creative direction, stable-ID narration segment mappings, and references to project-owned element/animation files, with optional library reuse. Existing plan files must be preserved and can be explicitly imported into a chosen take; see the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
+- **Architecture follow-up:** Whole-spine takes are now implemented under project-root `visual_layer/<take-id>.json`; see the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). Existing per-beat plans remain intact and usable, but there is no automatic importer. Creators can manually carry intent into a chosen take without changing the original.
+
+## Current placement
+
+The original header placement in this task's historical requirements was superseded by the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). The global header now contains project context and narration transport only. The legacy plan workflow remains available in Visual Layer; new visual work should use whole-spine takes.
 
 ## Objective
 

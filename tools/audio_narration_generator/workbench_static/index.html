@@ -178,9 +178,47 @@
           <div class="layer-heading">
             <div class="position-label"><span id="visual-beat-label">Visual for selected beat</span><span class="rule"></span></div>
             <p class="section-kicker">VISUAL LAYER</p>
-            <h1>Plan the visual</h1>
-            <p>Choose a library recipe or make a custom plan for this beat. The JSON records intent; it does not render the animation.</p>
+            <h1>Visual takes across the video</h1>
+            <p>Each take maps the narration spine to project-owned visual work. Select a take to see this beat's intent and implementation; the workbench stores and validates JSON but never runs renderer code.</p>
           </div>
+          <div class="take-workspace">
+            <label class="visual-recipe-field" for="visual-take-select">
+              <span>Selected whole-video take</span>
+              <select id="visual-take-select" aria-describedby="visual-take-status"><option value="">No visual take selected</option></select>
+            </label>
+            <div class="visual-plan-actions"><button id="open-visual-take" class="button button-outline" type="button" hidden>Open take JSON</button></div>
+            <div id="visual-take-summary" class="layer-file-summary" aria-live="polite">
+              <strong id="visual-take-title">No visual take yet</strong>
+              <p id="visual-take-direction">Create a take to start a visual treatment for the narration spine.</p>
+              <span id="visual-take-status" class="visual-plan-status" role="status"></span>
+            </div>
+            <section class="selected-layer-entry" aria-labelledby="visual-entry-heading">
+              <p class="section-kicker">SELECTED BEAT</p>
+              <h2 id="visual-entry-heading">Visual intent</h2>
+              <p id="visual-entry-status" class="layer-segment-context">Select a beat to inspect its visual mapping.</p>
+              <p id="visual-entry-intent" class="layer-entry-intent"></p>
+              <dl class="layer-entry-details">
+                <div><dt>Renderer</dt><dd id="visual-entry-renderer">—</dd></div>
+                <div><dt>Implementation folder</dt><dd id="visual-entry-folder">—</dd></div>
+                <div><dt>Entry file</dt><dd id="visual-entry-file">—</dd></div>
+              </dl>
+            </section>
+            <details class="create-take-details">
+              <summary>Create a new visual take</summary>
+              <div class="create-take-fields">
+                <label for="visual-take-id">Take ID <small>Use a distinct ID such as v_layer_2.</small></label>
+                <input id="visual-take-id" maxlength="57" placeholder="v_layer_2" autocomplete="off">
+                <label for="visual-take-title-input">Take title</label>
+                <input id="visual-take-title-input" maxlength="160" placeholder="Alternate visual direction" autocomplete="off">
+                <label for="visual-take-direction-input">Whole-video creative direction</label>
+                <textarea id="visual-take-direction-input" maxlength="24000" rows="3" placeholder="Describe the visual treatment across the narration spine."></textarea>
+                <button id="create-visual-take" class="button button-visual" type="button">Create and select take</button>
+              </div>
+            </details>
+          </div>
+          <details class="legacy-plan-details">
+            <summary>Legacy per-beat visual plan</summary>
+            <p class="legacy-plan-note">This older audio/visuals file is preserved for compatibility. New whole-video treatments belong in visual_layer takes.</p>
           <div class="visual-plan-form">
             <label class="visual-recipe-field" for="visual-recipe">
               <span>Animation recipe</span>
@@ -194,6 +232,7 @@
             </div>
             <span id="visual-plan-status" class="visual-plan-status" role="status" aria-live="polite">Loading plan status…</span>
           </div>
+          </details>
         </div>
       </section>
 
@@ -202,9 +241,14 @@
           <p class="section-kicker">MUSIC LAYER</p>
           <h1>Music for this beat</h1>
           <p id="music-layer-beat" class="layer-segment-context">Select a beat to see its music workspace.</p>
+          <div class="mapping-workspace">
+            <p id="music-mapping-status" class="visual-plan-status" role="status" aria-live="polite">No music mapping yet.</p>
+            <p id="music-mapping-detail" class="layer-segment-context">A JSON list of project-local cue references. No audio is downloaded, played, mixed, or rendered.</p>
+            <div class="visual-plan-actions"><button id="create-music-mapping" class="button button-visual" type="button">Create music JSON</button><button id="open-music-mapping" class="text-button" type="button" hidden>Open JSON</button></div>
+          </div>
           <div class="layer-placeholder-note">
             <span class="placeholder-rule" aria-hidden="true"></span>
-            <div><strong>Per-beat mapping is the next step</strong><p>Use Asset Finder separately to source audio. This workspace will hold the beat's music cue JSON; playback and mixing will be handled later.</p></div>
+            <div><strong>Find assets separately</strong><p>Use Asset Finder when ready to locate and review audio assets. The mapping only points to project files.</p></div>
           </div>
         </div>
       </section>
@@ -214,9 +258,14 @@
           <p class="section-kicker">SOUND EFFECTS LAYER</p>
           <h1>Sound effects for this beat</h1>
           <p id="soundeffects-layer-beat" class="layer-segment-context">Select a beat to see its sound effects workspace.</p>
+          <div class="mapping-workspace">
+            <p id="sfx-mapping-status" class="visual-plan-status" role="status" aria-live="polite">No sound effects mapping yet.</p>
+            <p id="sfx-mapping-detail" class="layer-segment-context">A JSON list of project-local cue references. No audio is downloaded, played, mixed, or rendered.</p>
+            <div class="visual-plan-actions"><button id="create-sfx-mapping" class="button button-visual" type="button">Create sound effects JSON</button><button id="open-sfx-mapping" class="text-button" type="button" hidden>Open JSON</button></div>
+          </div>
           <div class="layer-placeholder-note">
             <span class="placeholder-rule" aria-hidden="true"></span>
-            <div><strong>Per-beat mapping is the next step</strong><p>Use Asset Finder separately to source audio. This workspace will hold the beat's SFX cue JSON; playback and mixing will be handled later.</p></div>
+            <div><strong>Find assets separately</strong><p>Use Asset Finder when ready to locate and review audio assets. The mapping only points to project files.</p></div>
           </div>
         </div>
       </section>

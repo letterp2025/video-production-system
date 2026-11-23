@@ -57,6 +57,9 @@ function renderVisualPlanner(segment) {
   const soundEffectsContext = $("soundeffects-layer-beat");
   if (musicContext) musicContext.textContent = beatContext;
   if (soundEffectsContext) soundEffectsContext.textContent = beatContext;
+  renderVisualTake(segment);
+  renderAudioMapping("music", segment);
+  renderAudioMapping("sfx", segment);
   updateVisualPlanControls(segment, plan);
 }
 
@@ -75,6 +78,87 @@ function updateVisualPlanControls(segment = currentSegment(), plan = segment?.vi
     : "Plan unavailable or invalid · check the audio/visuals folder";
   else if (isDirty() || isNoteDirty()) status.textContent = "Save beat and note changes before creating a visual plan.";
   else status.textContent = `No plan yet · ${plan.relative_path}`;
+}
+
+function layerStatusLabel(status) {
+  return ({
+    none: "Not created", complete: "Complete across active narration beats", in_progress: "In progress",
+    saved: "Saved", pending: "Pending visual work", missing: "Implementation files missing",
+    needs_review: "Needs review after spoken-text changes", invalid: "Invalid or unavailable JSON",
+  })[status] || status;
+}
+
+function renderVisualTake(segment) {
+  const layer = state.project?.visual_layer || { takes: [], selected_take: null, selected_take_id: null, selection_status: "none" };
+  const select = $("visual-take-select");
+  select.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = layer.takes.length ? "Choose a visual take" : "No visual take created";
+  select.append(empty);
+  for (const take of layer.takes) {
+    const option = document.createElement("option");
+    option.value = take.take_id;
+    option.textContent = `${take.title || take.take_id} · ${take.take_id} · ${layerStatusLabel(take.status)}`;
+    select.append(option);
+  }
+  select.value = layer.selected_take_id || "";
+  const selected = layer.selected_take;
+  $("visual-take-title").textContent = selected?.title || "No visual take selected";
+  $("visual-take-direction").textContent = selected?.creative_direction || "Create a take to start a visual treatment for the narration spine.";
+  const takeStatus = $("visual-take-status");
+  if (!selected) takeStatus.textContent = layer.selection_status === "invalid" ? "Selected take pointer is invalid. Choose a valid take or repair the JSON." : "No whole-spine visual take is selected.";
+  else if (selected.status === "complete") takeStatus.textContent = `Complete · ${selected.complete_active_segment_count}/${selected.active_segment_count} active beats · visual_layer/${selected.filename}`;
+  else if (selected.status === "in_progress") {
+    const missing = selected.missing_active_segment_ids || [];
+    takeStatus.textContent = `In progress · ${selected.complete_active_segment_count || 0}/${selected.active_segment_count} active beats ready${missing.length ? ` · unmapped: ${missing.join(", ")}` : ""} · visual_layer/${selected.filename}`;
+  } else takeStatus.textContent = `${layerStatusLabel(selected.status)} · visual_layer/${selected.filename}${selected.error ? ` · ${selected.error}` : ""}`;
+  const entry = segment?.visual_take_segment || { status: "none" };
+  $("visual-entry-status").textContent = segment
+    ? `${segment.title || segment.id} · ${segment.id} · ${layerStatusLabel(entry.status)}`
+    : "Select a beat to inspect its visual mapping.";
+  $("visual-entry-intent").textContent = entry.visual_intent || (entry.status === "pending" ? "No visual intent has been added for this beat in the selected take." : "");
+  $("visual-entry-renderer").textContent = entry.renderer || "—";
+  $("visual-entry-folder").textContent = entry.implementation?.folder || "—";
+  $("visual-entry-file").textContent = entry.implementation?.entry_file || "—";
+  const open = $("open-visual-take");
+  open.hidden = !selected?.can_open;
+  open.disabled = state.busy || !selected?.can_open;
+}
+
+function renderAudioMapping(layerName, segment) {
+  const isMusic = layerName === "music";
+  const key = isMusic ? "music_mapping" : "sfx_mapping";
+  const prefix = isMusic ? "music" : "sfx";
+  const mapping = segment?.[key] || { status: "none", exists: false, can_open: false, relative_path: `${layerName}/${segment?.id || "<segment-id>"}.json`, cue_count: 0 };
+  const status = $(`${prefix}-mapping-status`);
+  if (!segment) status.textContent = `Select a beat to create a ${isMusic ? "music" : "sound effects"} mapping.`;
+  else if (mapping.status === "none") status.textContent = `No mapping yet · ${mapping.relative_path}`;
+  else if (mapping.status === "saved") status.textContent = `Saved · ${mapping.cue_count} cue${mapping.cue_count === 1 ? "" : "s"} · ${mapping.relative_path}`;
+  else if (mapping.status === "needs_review") status.textContent = `Needs review · approved spoken words changed · ${mapping.relative_path}`;
+  else status.textContent = `Invalid or unavailable mapping · inspect ${mapping.relative_path}`;
+  const create = $(`create-${prefix}-mapping`);
+  const open = $(`open-${prefix}-mapping`);
+  create.disabled = state.busy || !segment || mapping.status !== "none" || isDirty();
+  open.hidden = !mapping.can_open;
+  open.disabled = state.busy || !mapping.can_open;
+}
+
+function updateLayerControls() {
+  const layer = state.project?.visual_layer;
+  const takeSelect = $("visual-take-select");
+  if (takeSelect) takeSelect.disabled = state.busy || isDirty() || !layer?.takes.length;
+  const createTake = $("create-visual-take");
+  if (createTake) createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;
+  for (const prefix of ["music", "sfx"]) {
+    const create = $(`create-${prefix}-mapping`);
+    const open = $(`open-${prefix}-mapping`);
+    const mappingKey = prefix === "music" ? "music_mapping" : "sfx_mapping";
+    if (create) create.disabled = state.busy || !currentSegment() || currentSegment()?.[mappingKey]?.status !== "none" || isDirty();
+    if (open) open.disabled = state.busy || !currentSegment()?.[mappingKey]?.can_open;
+  }
+  const openTake = $("open-visual-take");
+  if (openTake) openTake.disabled = state.busy || !layer?.selected_take?.can_open;
 }
 
 function activateLayerTab(tab, moveFocus = false) {
@@ -132,7 +216,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-recipe", "create-visual-plan", "open-visual-plan"].forEach((id) => {
+  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-recipe", "create-visual-plan", "open-visual-plan", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping", "create-sfx-mapping", "open-sfx-mapping"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -170,6 +254,7 @@ function updateDirtyState() {
   $("move-beat-down").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, 1);
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
   updateVisualPlanControls();
+  updateLayerControls();
 }
 
 function visibleSegments() {
@@ -1056,6 +1141,85 @@ async function openVisualPlan() {
   finally { setBusy(false); }
 }
 
+async function selectVisualTake() {
+  const takeId = $("visual-take-select").value;
+  if (!takeId) return refreshState();
+  try {
+    setBusy(true);
+    const result = await request("/api/visual-takes/select", { take_id: takeId });
+    state.project = result.state;
+    renderProject();
+    toast(`Selected ${takeId} for the whole narration spine.`);
+  } catch (error) {
+    toast(error.message);
+    await refreshState().catch(() => {});
+  } finally { setBusy(false); }
+}
+
+async function createVisualTake() {
+  if (state.busy || isDirty()) return toast("Save beat changes before creating a visual take.");
+  const takeId = $("visual-take-id").value.trim();
+  const title = $("visual-take-title-input").value.trim();
+  const creativeDirection = $("visual-take-direction-input").value.trim();
+  if (!takeId || !title || !creativeDirection) return toast("Enter a take ID, title, and whole-video creative direction.");
+  try {
+    setBusy(true);
+    const result = await request("/api/visual-takes/create", {
+      take_id: takeId, title, creative_direction: creativeDirection, manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    $("visual-take-id").value = "";
+    $("visual-take-title-input").value = "";
+    $("visual-take-direction-input").value = "";
+    renderProject();
+    toast(`Created and selected ${takeId}. Its JSON has a pending entry for every narration beat.`);
+  } catch (error) {
+    toast(error.message);
+    await refreshState().catch(() => {});
+  } finally { setBusy(false); }
+}
+
+async function openVisualTake() {
+  const takeId = state.project?.visual_layer?.selected_take_id;
+  if (!takeId || state.busy) return;
+  try {
+    setBusy(true);
+    await request("/api/visual-takes/open", { take_id: takeId });
+    toast(`Opened visual_layer/${takeId}.json in the default app.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
+async function createAudioMapping(layer) {
+  const segment = currentSegment();
+  if (!segment || state.busy) return;
+  if (isDirty()) return toast("Save beat changes before creating a layer mapping.");
+  try {
+    setBusy(true);
+    const result = await request(`/api/layers/${layer}/create`, {
+      segment_id: segment.id, manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    renderProject();
+    toast(`Created ${result.relative_path}. Add project-relative cue paths in the JSON editor when ready.`);
+  } catch (error) {
+    toast(error.message);
+    await refreshState().catch(() => {});
+  } finally { setBusy(false); }
+}
+
+async function openAudioMapping(layer) {
+  const segment = currentSegment();
+  if (!segment || state.busy) return;
+  try {
+    setBusy(true);
+    await request(`/api/layers/${layer}/open`, { segment_id: segment.id });
+    toast(`Opened ${layer}/${segment.id}.json in the default app.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
 async function checkPreviewAvailability() {
   try {
     const result = await request("/api/provider");
@@ -1090,6 +1254,13 @@ function bindEvents() {
   });
   $("create-visual-plan").addEventListener("click", createVisualPlan);
   $("open-visual-plan").addEventListener("click", openVisualPlan);
+  $("visual-take-select").addEventListener("change", selectVisualTake);
+  $("create-visual-take").addEventListener("click", createVisualTake);
+  $("open-visual-take").addEventListener("click", openVisualTake);
+  $("create-music-mapping").addEventListener("click", () => createAudioMapping("music"));
+  $("open-music-mapping").addEventListener("click", () => openAudioMapping("music"));
+  $("create-sfx-mapping").addEventListener("click", () => createAudioMapping("sfx"));
+  $("open-sfx-mapping").addEventListener("click", () => openAudioMapping("sfx"));
   $("show-other-takes").addEventListener("click", () => {
     state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
     const segment = currentSegment();
