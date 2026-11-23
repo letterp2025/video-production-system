@@ -14,6 +14,9 @@ from urllib.request import Request, urlopen
 
 import generate_narration as narration
 import workbench
+import workbench_common
+import workbench_project
+import workbench_visuals
 
 
 class ProjectTest(unittest.TestCase):
@@ -57,7 +60,7 @@ class ProjectTest(unittest.TestCase):
     def test_full_work_queue_does_not_replace_existing_state(self):
         self.project.save_note("opening-hook", "Keep this saved note.")
         before = self.project.work_path.read_bytes()
-        with mock.patch.object(workbench, "MAX_WORK_STATE_BYTES", len(before) + 10):
+        with mock.patch.object(workbench_project, "MAX_WORK_STATE_BYTES", len(before) + 10):
             with self.assertRaisesRegex(workbench.WorkbenchError, "queue is full"):
                 self.project.save_note("opening-hook", "A" * 1_000)
         self.assertEqual(self.project.work_path.read_bytes(), before)
@@ -74,7 +77,7 @@ class ProjectTest(unittest.TestCase):
         recipes = [{"id": "ANM-test-reveal", "title": "Test reveal"}]
         manifest_before = self.manifest.read_bytes()
         manifest_hash = self.project.state_payload()["manifest_hash"]
-        with mock.patch.object(workbench, "visual_animation_recipes", return_value=recipes):
+        with mock.patch.object(workbench_project, "visual_animation_recipes", return_value=recipes):
             result = self.project.create_visual_plan("opening-hook", "ANM-test-reveal", manifest_hash)
             plan_path = self.audio / "visuals" / "opening-hook.json"
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -141,7 +144,7 @@ class ProjectTest(unittest.TestCase):
         self.assertTrue(plan_state["can_open"])
 
         plan_path.write_text("x" * 20, encoding="utf-8")
-        with mock.patch.object(workbench, "MAX_VISUAL_PLAN_BYTES", 10):
+        with mock.patch.object(workbench_visuals, "MAX_VISUAL_PLAN_BYTES", 10):
             plan_state = self.project.state_payload()["segments"][0]["visual_plan"]
         self.assertEqual(plan_state["status"], "invalid")
         self.assertFalse(plan_state["can_open"])
@@ -153,12 +156,12 @@ class ProjectTest(unittest.TestCase):
         entry = library / "ANM-test-reveal"
         entry.mkdir(parents=True)
         (entry / "NOTES.md").write_text("# ANM-test-reveal — Test reveal\n", encoding="utf-8")
-        with mock.patch.object(workbench, "VISUAL_ANIMATIONS_DIR", library):
+        with mock.patch.object(workbench_common, "VISUAL_ANIMATIONS_DIR", library):
             self.assertEqual(workbench.visual_animation_recipes(), [{"id": "ANM-test-reveal", "title": "Test reveal"}])
 
     def test_visual_plan_rejects_recipe_not_in_library(self):
         manifest_hash = self.project.state_payload()["manifest_hash"]
-        with mock.patch.object(workbench, "visual_animation_recipes", return_value=[]):
+        with mock.patch.object(workbench_project, "visual_animation_recipes", return_value=[]):
             with self.assertRaisesRegex(workbench.WorkbenchError, "Choose a recipe"):
                 self.project.create_visual_plan("opening-hook", "ANM-unlisted", manifest_hash)
         self.assertFalse((self.audio / "visuals").exists())

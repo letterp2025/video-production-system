@@ -4,6 +4,16 @@ Generate separately reviewable F5-TTS narration takes from an ordered JSON manif
 
 The generator does not bundle F5-TTS, a model checkpoint, or voice recordings. Install and license those separately. Use reference audio only when you have permission to use it for speech generation.
 
+## Code layout
+
+The command-line entry points remain `generate_narration.py`, `workbench.py`, and `preview_narration.py`.
+
+- `narration_manifest.py` owns manifest validation and shared field rules; `generate_narration.py` owns take generation, pruning, and assembly.
+- `workbench_common.py` owns shared limits, errors, and atomic JSON helpers. `workbench_project.py` owns manifest-backed editing and the temporary work queue.
+- `workbench_visuals.py` owns per-beat visual plans; `workbench_audio.py` owns take and assembly lookup. `workbench.py` owns the local HTTP routes, Codex request adapter, and launch command.
+
+Keep new behavior in its owning module and leave the entry-point commands stable. Run the Python and browser tests after moving code across these boundaries.
+
 ## Requirements
 
 - Python from a compatible F5-TTS environment
