@@ -77,6 +77,19 @@ class LayerProjectTest(unittest.TestCase):
         with self.assertRaisesRegex(workbench.WorkbenchError, "already exists"):
             self.create_take("v_layer_1")
 
+    def test_failed_selection_after_creation_preserves_take_and_explains_recovery(self):
+        with mock.patch.object(workbench_visual_takes, "atomic_write_json", side_effect=OSError("selection unavailable")):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "was created, but could not be selected") as raised:
+                self.create_take()
+        self.assertIn("select this existing take", str(raised.exception))
+        take_path = self.root / "visual_layer" / "v_layer_1.json"
+        self.assertTrue(take_path.is_file())
+        self.assertFalse((self.root / "visual_layer" / "selected_take.json").exists())
+        self.assertIn("v_layer_1", [item["take_id"] for item in self.project.state_payload()["visual_layer"]["takes"]])
+        self.assertEqual(self.project.select_visual_take("v_layer_1")["visual_layer"]["selected_take_id"], "v_layer_1")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "already exists"):
+            self.create_take()
+
     def test_editing_one_take_does_not_change_an_alternative_or_legacy_plan(self):
         self.create_take("v_layer_1")
         self.create_take("v_layer_2")
@@ -165,6 +178,27 @@ class LayerProjectTest(unittest.TestCase):
         path.write_text(json.dumps(take), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "renderer.*effectcraft"):
             validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
+
+    def test_visual_take_runtime_and_schema_reject_empty_direction_and_oversized_library_ids(self):
+        self.create_take()
+        take = json.loads((self.root / "visual_layer" / "v_layer_1.json").read_text(encoding="utf-8"))
+        schema_path = Path(workbench.__file__).resolve().parent / "visual_take.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["creative_direction"]["minLength"], 1)
+        self.assertEqual(schema["properties"]["creative_direction"]["pattern"], r"\S")
+        for direction in ("", "   "):
+            take["creative_direction"] = direction
+            with self.assertRaisesRegex(ValueError, "creative direction"):
+                validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
+        take["creative_direction"] = "Retro treatment."
+        entry = take["segments"]["opening-hook"]
+        reference_schema = schema["$defs"]["segment"]["properties"]["library_reference"]["oneOf"][1]["properties"]
+        for key, limit in (("library", 120), ("entry_id", 160)):
+            self.assertEqual(reference_schema[key]["maxLength"], limit)
+            entry["library_reference"] = {"library": "custom", "entry_id": "title"}
+            entry["library_reference"][key] = "x" * (limit + 1)
+            with self.assertRaisesRegex(ValueError, "Library reference"):
+                validate_visual_take(take, "v_layer_1", self.data["segments"], self.root)
 
     def test_visual_take_creation_rejects_invalid_id_and_stale_manifest_hash(self):
         digest = self.project.state_payload()["manifest_hash"]

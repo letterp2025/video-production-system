@@ -261,12 +261,20 @@ class VisualTakeMixin:
             }
             try:
                 atomic_create_json(path, document)
-                pointer_path = self._selected_visual_take_path(create=True)
-                atomic_write_json(pointer_path, {"schema_version": 1, "selected_take": path.name})
             except FileExistsError as exc:
                 raise WorkbenchError("A visual take with this ID already exists. It was not overwritten.", 409) from exc
             except OSError as exc:
                 raise WorkbenchError(f"Could not create the visual take: {exc}", 500) from exc
+            try:
+                pointer_path = self._selected_visual_take_path(create=True)
+                atomic_write_json(pointer_path, {"schema_version": 1, "selected_take": path.name})
+            except (OSError, WorkbenchError) as exc:
+                raise WorkbenchError(
+                    f"Visual take {path.name} was created, but could not be selected: {exc} "
+                    "It remains in visual_layer; select this existing take after fixing the selection error. "
+                    "Do not create it again.",
+                    500,
+                ) from exc
             return {"relative_path": f"visual_layer/{path.name}", "state": self.state_payload()}
 
     def select_visual_take(self, take_id: str) -> dict[str, Any]:

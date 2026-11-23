@@ -79,7 +79,7 @@ def validate_visual_take(
     direction = value.get("creative_direction")
     if not isinstance(title, str) or not title.strip() or len(title) > MAX_TITLE_CHARS:
         raise ValueError("The visual take title is invalid.")
-    if not isinstance(direction, str) or len(direction) > MAX_TEXT_CHARS:
+    if not isinstance(direction, str) or not direction.strip() or len(direction) > MAX_TEXT_CHARS:
         raise ValueError("The visual take creative direction is invalid.")
     segments = value.get("segments")
     if not isinstance(segments, dict) or len(segments) > MAX_LAYER_ENTRIES:
@@ -117,7 +117,12 @@ def validate_visual_take(
         if library_reference is not None:
             if not isinstance(library_reference, dict) or set(library_reference) != {"library", "entry_id"}:
                 raise ValueError(f"Library reference for {segment_id} is invalid.")
-            if not all(isinstance(library_reference.get(key), str) and library_reference[key].strip() for key in ("library", "entry_id")):
+            if not all(
+                isinstance(library_reference.get(key), str)
+                and library_reference[key].strip()
+                and len(library_reference[key]) <= limit
+                for key, limit in (("library", 120), ("entry_id", 160))
+            ):
                 raise ValueError(f"Library reference for {segment_id} is invalid.")
     return value
 

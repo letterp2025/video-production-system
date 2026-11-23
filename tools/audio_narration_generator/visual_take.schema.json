@@ -7,8 +7,8 @@
   "properties": {
     "schema_version": { "const": 1 },
     "take_id": { "type": "string", "pattern": "^v_layer_[a-z0-9][a-z0-9_-]{0,48}$" },
-    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
-    "creative_direction": { "type": "string", "minLength": 1, "maxLength": 24000 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+    "creative_direction": { "type": "string", "minLength": 1, "maxLength": 24000, "pattern": "\\S" },
     "segments": {
       "type": "object",
       "maxProperties": 2000,
@@ -47,8 +47,8 @@
               "additionalProperties": false,
               "required": ["library", "entry_id"],
               "properties": {
-                "library": { "type": "string", "minLength": 1, "maxLength": 120 },
-                "entry_id": { "type": "string", "minLength": 1, "maxLength": 160 }
+                "library": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "\\S" },
+                "entry_id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" }
               }
             }
           ]
