@@ -199,12 +199,22 @@ function renderVisualRequests(segment, entry) {
     const brief = document.createElement("p");
     brief.textContent = item.brief || item.error || "Request unavailable.";
     content.append(brief);
+    if (item.error) {
+      const error = document.createElement("p"); error.className = "visual-request-error"; error.textContent = "Result needs attention: " + item.error; content.append(error);
+    }
+    if (item.legacy_result) {
+      const legacy = document.createElement("p"); legacy.className = "visual-request-warning";
+      legacy.textContent = "Legacy result format. It remains readable; update result.json to the current format when convenient."; content.append(legacy);
+    }
     if (item.renderer) { const p = document.createElement("p"); p.textContent = "Renderer: " + item.renderer; content.append(p); }
     for (const ref of item.references || []) {
       const p = document.createElement("p");
       p.textContent = ref.visibility + " · " + ref.library + " · " + ref.entry_id + (ref.note ? " — " + ref.note : "");
       content.append(p);
     }
+    if (item.result.provider) { const p = document.createElement("p"); p.textContent = "Provider: " + item.result.provider; content.append(p); }
+    if (item.result.updated_at) { const p = document.createElement("p"); p.textContent = "Last updated: " + item.result.updated_at; content.append(p); }
+    if (item.result.error) { const p = document.createElement("p"); p.className = "visual-request-error"; p.textContent = "Codex note: " + item.result.error; content.append(p); }
     for (const [label, value] of [["Implementation", item.result.implementation_path], ["Preview", item.result.preview_path], ["Segment export", item.result.export_path]]) {
       if (value) { const p = document.createElement("p"); p.textContent = label + ": " + value; content.append(p); }
     }

@@ -10,7 +10,7 @@ The command-line entry points remain `generate_narration.py`, `workbench.py`, an
 
 - `narration_manifest.py` owns manifest validation and shared field rules; `generate_narration.py` owns take generation, pruning, and assembly.
 - `workbench_common.py` owns shared limits, errors, and atomic JSON helpers. `workbench_project.py` owns manifest-backed editing and the temporary work queue.
-- `workbench_visuals.py` owns per-beat visual plans; `workbench_narration_requests.py` owns provider-neutral narration request/result files; `workbench_audio.py` owns take and assembly lookup.
+- `workbench_visual_takes.py` and `workbench_visual_requests.py` own whole-spine visual takes and their request/result handoff; `workbench_visuals.py` owns the legacy per-beat visual-plan files; `workbench_narration_requests.py` owns provider-neutral narration request/result files; `workbench_audio.py` owns take and assembly lookup.
 - `workbench.py` owns the local HTTP routes and launch command. Its optional Codex CLI adapter processes the same saved narration request used by terminal AI tools.
 
 Keep new behavior in its owning module and leave the entry-point commands stable. Run the Python and browser tests after moving code across these boundaries.
@@ -149,7 +149,31 @@ Each take manifest is the whole-video direction and an index of stable narration
 
 In **Visual Layer**, first select a take to apply it across the whole narration spine. If there is no take yet, choose **Create a visual take** and enter a take ID, name, and direction. Select a segment in the left list; its stable ID appears above its request history. Choose **Add visual request** and describe what you want Codex to make. A renderer preference and library references are optional. Expand **Use a Visual Library reference** to browse Public/Private and References/Elements/Animations, search, inspect notes and previews, and attach entries with a note. The browser only reads catalog entries; the request JSON stores their scope, library category, stable entry ID, and your note. Start the workbench with `--library-config` pointing to a local Visual Library Browser JSON config to enable private entries. Without it, only public entries appear. Use **Open take JSON** only when you want to inspect or edit the whole-spine take file directly. Use **Reload manifest** after terminal Codex changes `result.json`. Reordering beats keeps mappings keyed to stable IDs; a newly added segment appears pending until the take manifest includes it.
 
-Each request gets its own `visual_layer/<take-id>/segments/<segment-id>/requests/VIS-001/` folder with `request.json` and `result.json`. The brief is preserved when you create another request. A request can also have an optional `sfx.json`. Open the request JSON or let Codex in your terminal read it from the project folder. That Codex session can create the segment's implementation and export, then record status and project-relative output paths in `result.json`. Return to VPS and choose **Reload manifest** to see the updated result and select a completed visual. VPS does not start a Codex service or run the renderer.
+Each request gets its own `visual_layer/<take-id>/segments/<segment-id>/requests/VIS-001/` folder with `request.json` and `result.json`. The brief is preserved when you create another request. The request also carries a `task` instruction that tells the terminal AI to keep the brief and narration manifest unchanged, work within that request folder, and update the paired result contract. A request can also have an optional `sfx.json`. Open the request JSON or let Codex in your terminal read it from the project folder. That Codex session can create the segment's implementation and export, then record status and project-relative output paths in `result.json`. Return to VPS and choose **Reload manifest** to see the updated result and select a completed visual. VPS does not start a Codex service or run the renderer.
+
+New requests start with the version-2 result contract in [`visual_result.schema.json`](visual_result.schema.json). Preserve `take_id`, `segment_id`, `request_id`, and `source_text_sha256` from the scaffold. Set `status` to `in_progress` while working and update `updated_at` (ISO 8601 with a timezone) whenever the result changes. On success, set `status` to `completed`, provide `completed_at`, and point `export_path` to the actual rendered segment file. On failure, set `status` to `failed` and explain it in `error`. `provider` is optional. `implementation_path` can point to a file or folder; `preview_path` and `export_path` must point to files. Any non-null output path must be project-relative, inside this request's folder, and already exist. A completed result is not selectable unless its export file exists and its source-text hash still matches the current narration. VPS validates these rules but never runs or inspects renderer code.
+
+Example completed `result.json`:
+
+```json
+{
+  "schema_version": 2,
+  "take_id": "v_layer_1",
+  "segment_id": "found-effectcraft",
+  "request_id": "VIS-001",
+  "source_text_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "status": "completed",
+  "implementation_path": "visual_layer/v_layer_1/segments/found-effectcraft/requests/VIS-001/implementation",
+  "preview_path": "visual_layer/v_layer_1/segments/found-effectcraft/requests/VIS-001/exports/preview.mp4",
+  "export_path": "visual_layer/v_layer_1/segments/found-effectcraft/requests/VIS-001/exports/segment.mp4",
+  "provider": "Codex",
+  "updated_at": "2026-11-23T10:08:00+00:00",
+  "completed_at": "2026-11-23T10:08:00+00:00",
+  "error": null
+}
+```
+
+Version-1 result files from existing requests remain readable as legacy records, provided their request ID and paths validate; they are marked as legacy in the UI. New requests always use version 2. See [`visual_result.schema.json`](visual_result.schema.json) for both accepted formats and runtime-only path checks.
 
 The take schema is [`visual_take.schema.json`](visual_take.schema.json); the selection-pointer schema is [`selected_visual_take.schema.json`](selected_visual_take.schema.json). Schema version is `1`. Do not place absolute machine paths or whole programs in JSON. Creating, selecting, or opening a take does not render frames or change narration. The workbench does not enforce renderer-specific launch conventions yet.
 

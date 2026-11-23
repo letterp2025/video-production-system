@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VPS visual request result",
+  "oneOf": [
+    { "$ref": "#/$defs/legacyV1" },
+    { "$ref": "#/$defs/currentV2" }
+  ],
+  "$defs": {
+    "legacyV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": 1 },
+        "request_id": { "type": "string", "pattern": "^VIS-[0-9]{3,6}$" },
+        "status": { "enum": ["requested", "in_progress", "completed", "failed"] },
+        "implementation_path": { "type": ["string", "null"] },
+        "preview_path": { "type": ["string", "null"] },
+        "export_path": { "type": ["string", "null"] }
+      },
+      "required": ["schema_version", "request_id", "status", "implementation_path", "preview_path", "export_path"],
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+          "then": { "properties": { "export_path": { "type": "string", "minLength": 1 } } }
+        }
+      ]
+    },
+    "currentV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": 2 },
+        "take_id": { "type": "string", "pattern": "^v_layer_[a-z0-9][a-z0-9_-]{0,48}$" },
+        "segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "request_id": { "type": "string", "pattern": "^VIS-[0-9]{3,6}$" },
+        "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "status": { "enum": ["requested", "in_progress", "completed", "failed"] },
+        "implementation_path": { "type": ["string", "null"], "minLength": 1 },
+        "preview_path": { "type": ["string", "null"], "minLength": 1 },
+        "export_path": { "type": ["string", "null"], "minLength": 1 },
+        "provider": { "type": ["string", "null"], "minLength": 1, "maxLength": 200 },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" },
+        "error": { "type": ["string", "null"], "maxLength": 4000 }
+      },
+      "required": [
+        "schema_version", "take_id", "segment_id", "request_id", "source_text_sha256", "status",
+        "implementation_path", "preview_path", "export_path", "provider", "updated_at", "completed_at", "error"
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "export_path": { "type": "string", "minLength": 1 },
+              "completed_at": { "type": "string", "format": "date-time" },
+              "error": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "completed_at": { "type": "null" },
+              "error": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["requested", "in_progress"] } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "completed_at": { "type": "null" },
+              "error": { "type": "null" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -62,7 +62,14 @@ class LayerProjectTest(unittest.TestCase):
         folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / "VIS-002"
         brief = json.loads((folder / "request.json").read_text(encoding="utf-8"))
         self.assertEqual(brief["references"][0]["note"], "Use only its palette")
+        self.assertIn("paired result.json", brief["task"])
         self.assertNotIn(str(self.root), json.dumps(brief))
+        scaffold = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(scaffold["schema_version"], 2)
+        self.assertEqual((scaffold["take_id"], scaffold["segment_id"], scaffold["request_id"]),
+                         ("v_layer_1", "opening-hook", "VIS-002"))
+        self.assertEqual(scaffold["source_text_sha256"], brief["source_text_sha256"])
+        self.assertEqual(scaffold["status"], "requested")
         self.project.create_visual_sfx("opening-hook", "VIS-002")
         self.assertTrue((folder / "sfx.json").is_file())
         self.assertFalse((folder.parent / "VIS-001" / "sfx.json").exists())
@@ -72,7 +79,9 @@ class LayerProjectTest(unittest.TestCase):
         export.parent.mkdir()
         export.write_bytes(b"test")
         result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
-        result.update({"status": "completed", "export_path": export.relative_to(self.root).as_posix()})
+        result.update({"status": "completed", "export_path": export.relative_to(self.root).as_posix(),
+                       "provider": "Codex", "updated_at": "2026-11-23T10:08:00+00:00",
+                       "completed_at": "2026-11-23T10:08:00+00:00"})
         (folder / "result.json").write_text(json.dumps(result), encoding="utf-8")
         state = self.project.select_visual_request("opening-hook", "VIS-002")
         self.assertEqual(state["segments"][0]["visual_take_segment"]["selected_request_id"], "VIS-002")
@@ -91,12 +100,92 @@ class LayerProjectTest(unittest.TestCase):
         made = self.project.create_visual_request("opening-hook", "Custom with no library", None, [], digest)
         folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / made["request_id"]
         result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
-        result.update({"status": "completed", "export_path": "../escape.mp4"})
+        result.update({"status": "completed", "export_path": "../escape.mp4",
+                       "provider": "Codex", "updated_at": "2026-11-23T10:08:00+00:00",
+                       "completed_at": "2026-11-23T10:08:00+00:00"})
         (folder / "result.json").write_text(json.dumps(result), encoding="utf-8")
         entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
         self.assertEqual(entry["requests"][0]["result"]["status"], "invalid")
         with self.assertRaisesRegex(workbench.WorkbenchError, "Only a completed"):
             self.project.select_visual_request("opening-hook", made["request_id"])
+
+    def test_visual_result_requires_matching_lineage_and_existing_export(self):
+        self.create_take()
+        digest = self.project.state_payload()["manifest_hash"]
+        made = self.project.create_visual_request("opening-hook", "Create a simple title", None, [], digest)
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / made["request_id"]
+        result_path = folder / "result.json"
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result.update({"status": "completed", "export_path": f"{folder.relative_to(self.root).as_posix()}/exports/missing.mp4",
+                       "provider": "Claude", "updated_at": "2026-11-23T10:08:00+00:00",
+                       "completed_at": "2026-11-23T10:08:00+00:00"})
+
+        result["segment_id"] = "next-beat"
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
+        self.assertEqual(entry["requests"][0]["result"]["status"], "invalid")
+        self.assertIn("identity or source-text hash", entry["requests"][0]["error"])
+
+        result["segment_id"] = "opening-hook"
+        result["source_text_sha256"] = "0" * 64
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
+        self.assertEqual(entry["requests"][0]["result"]["status"], "invalid")
+        self.assertIn("identity or source-text hash", entry["requests"][0]["error"])
+
+        result["source_text_sha256"] = json.loads((folder / "request.json").read_text(encoding="utf-8"))["source_text_sha256"]
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
+        self.assertEqual(entry["requests"][0]["result"]["status"], "invalid")
+        self.assertIn("existing project file or folder", entry["requests"][0]["error"])
+
+    def test_visual_result_tracks_progress_and_requires_failure_details(self):
+        self.create_take()
+        digest = self.project.state_payload()["manifest_hash"]
+        made = self.project.create_visual_request("opening-hook", "Create a title", None, [], digest)
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / made["request_id"]
+        result_path = folder / "result.json"
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result.update({"status": "in_progress", "provider": "Codex", "updated_at": "2026-11-23T10:05:00+00:00"})
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        item = self.project.state_payload()["segments"][0]["visual_take_segment"]["requests"][0]
+        self.assertEqual(item["result"]["status"], "in_progress")
+        self.assertEqual(item["result"]["provider"], "Codex")
+
+        result.update({"status": "failed", "updated_at": "2026-11-23T10:06:00+00:00", "error": "Renderer setup failed."})
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        item = self.project.state_payload()["segments"][0]["visual_take_segment"]["requests"][0]
+        self.assertEqual(item["result"]["status"], "failed")
+        self.assertEqual(item["result"]["error"], "Renderer setup failed.")
+
+        result["error"] = None
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        item = self.project.state_payload()["segments"][0]["visual_take_segment"]["requests"][0]
+        self.assertEqual(item["result"]["status"], "invalid")
+        self.assertIn("failed result needs an error", item["error"])
+
+    def test_legacy_visual_result_remains_readable_but_paths_must_exist(self):
+        self.create_take()
+        digest = self.project.state_payload()["manifest_hash"]
+        made = self.project.create_visual_request("opening-hook", "Legacy visual", None, [], digest)
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / made["request_id"]
+        export = folder / "exports" / "legacy.mp4"
+        export.parent.mkdir()
+        export.write_bytes(b"legacy")
+        result_path = folder / "result.json"
+        result_path.write_text(json.dumps({
+            "schema_version": 1,
+            "request_id": made["request_id"],
+            "status": "completed",
+            "implementation_path": None,
+            "preview_path": None,
+            "export_path": export.relative_to(self.root).as_posix(),
+        }), encoding="utf-8")
+        entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
+        self.assertEqual(entry["requests"][0]["result"]["status"], "completed")
+        self.assertTrue(entry["requests"][0]["legacy_result"])
+        selected = self.project.select_visual_request("opening-hook", made["request_id"])
+        self.assertEqual(selected["segments"][0]["visual_take_segment"]["selected_request_id"], made["request_id"])
 
     def test_take_creation_creates_full_spine_skeleton_and_selects_without_touching_narration(self):
         manifest_before = self.manifest.read_bytes()
