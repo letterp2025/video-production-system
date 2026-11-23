@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, visualRecipeSelections: {}, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
@@ -23,6 +23,52 @@ async function request(path, body) {
 function escapeText(value) { return String(value ?? ""); }
 function currentSegment() { return state.project?.segments.find((item) => item.id === state.selectedId); }
 function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
+
+function renderVisualPlanner(segment) {
+  const select = $("visual-recipe");
+  select.replaceChildren();
+  const custom = document.createElement("option");
+  custom.value = "";
+  custom.textContent = "Custom plan (no library recipe)";
+  select.append(custom);
+  for (const recipe of state.project?.visual_recipes || []) {
+    const option = document.createElement("option");
+    option.value = recipe.id;
+    option.textContent = `${recipe.title} · ${recipe.id}`;
+    select.append(option);
+  }
+  const plan = segment?.visual_plan || { status: "none", relative_path: "", exists: false, can_open: false };
+  if (plan.recipe_id && ![...select.options].some((option) => option.value === plan.recipe_id)) {
+    const unavailable = document.createElement("option");
+    unavailable.value = plan.recipe_id;
+    unavailable.textContent = `Unavailable recipe · ${plan.recipe_id}`;
+    select.append(unavailable);
+  }
+  select.value = plan.exists
+    ? plan.recipe_id || ""
+    : state.visualRecipeSelections[segment?.id] || "";
+  $("visual-beat-label").textContent = segment
+    ? `Visual for beat ${String(segment.position).padStart(2, "0")} · ${segment.id}`
+    : "Visual for selected beat";
+  updateVisualPlanControls(segment, plan);
+}
+
+function updateVisualPlanControls(segment = currentSegment(), plan = segment?.visual_plan || { status: "none", relative_path: "", exists: false, can_open: false }) {
+  const selectable = Boolean(segment) && plan.status === "none";
+  $("visual-recipe").disabled = state.busy || !selectable;
+  $("create-visual-plan").disabled = state.busy || !selectable || isDirty() || isNoteDirty();
+  $("open-visual-plan").hidden = !plan.can_open;
+  $("open-visual-plan").disabled = state.busy || !plan.can_open;
+  const status = $("visual-plan-status");
+  if (!segment) status.textContent = "Select a beat to plan its visual.";
+  else if (plan.status === "saved") status.textContent = `Plan saved · ${plan.recipe_title || "Custom visual plan"} · ${plan.relative_path}`;
+  else if (plan.status === "needs_review") status.textContent = `Needs review · spoken words changed · ${plan.relative_path}`;
+  else if (plan.status === "invalid") status.textContent = plan.can_open
+    ? `Plan unavailable or invalid · inspect ${plan.relative_path}`
+    : "Plan unavailable or invalid · check the audio/visuals folder";
+  else if (isDirty() || isNoteDirty()) status.textContent = "Save beat and note changes before creating a visual plan.";
+  else status.textContent = `No plan yet · ${plan.relative_path}`;
+}
 
 function activateUtilityTab(tab, moveFocus = false) {
   const tabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
@@ -65,7 +111,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat"].forEach((id) => {
+  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-recipe", "create-visual-plan", "open-visual-plan"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -102,6 +148,7 @@ function updateDirtyState() {
   $("move-beat-up").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, -1);
   $("move-beat-down").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, 1);
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
+  updateVisualPlanControls();
 }
 
 function visibleSegments() {
@@ -421,6 +468,7 @@ function renderEditor() {
   const segment = currentSegment();
   const editor = $("editor");
   const empty = $("empty-state");
+  renderVisualPlanner(segment);
   if (!segment) {
     editor.hidden = true;
     empty.hidden = false;
@@ -469,6 +517,7 @@ function followPlaybackBeat(segmentId) {
   renderTakes(segment);
   renderSuggestions(segment);
   renderContext(segment);
+  renderVisualPlanner(segment);
   state.baseline = snapshotKey(snapshot());
   updateDirtyState();
 }
@@ -953,23 +1002,48 @@ async function runGeneration(assemble) {
   finally { setBusy(false); updateDirtyState(); }
 }
 
-async function checkProvider() {
-  const node = $("provider-state");
+async function createVisualPlan() {
+  const segment = currentSegment();
+  if (!segment || state.busy) return;
+  if (isDirty() || isNoteDirty()) return toast("Save beat and note changes before creating a visual plan.");
+  const recipeId = $("visual-recipe").value || null;
+  try {
+    setBusy(true);
+    const result = await request("/api/visuals/create", {
+      segment_id: segment.id, recipe_id: recipeId, manifest_hash: state.manifestHash,
+    });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    renderProject();
+    toast(`Created ${result.relative_path} for ${segment.id}. This is a plan only; nothing was rendered.`);
+  } catch (error) {
+    toast(error.message);
+    await refreshState().catch(() => {});
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function openVisualPlan() {
+  const segment = currentSegment();
+  if (!segment || state.busy) return;
+  try {
+    setBusy(true);
+    await request("/api/visuals/open", { segment_id: segment.id });
+    toast(`Opened the visual plan for ${segment.id} in the default app.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
+async function checkPreviewAvailability() {
   try {
     const result = await request("/api/provider");
     state.previewAvailable = Boolean(result.preview?.available);
     updateDirtyState();
     if (currentSegment()) renderSuggestions(currentSegment());
-    if (result.codex.available) {
-      node.className = "provider-state ready";
-      $("provider-label").textContent = `Codex CLI found${result.codex.version ? ` · ${result.codex.version}` : ""}`;
-    } else {
-      node.className = "provider-state missing";
-      $("provider-label").textContent = "Codex CLI not found";
-    }
   } catch {
-    node.className = "provider-state missing";
-    $("provider-label").textContent = "Codex status unavailable";
+    state.previewAvailable = false;
+    updateDirtyState();
   }
 }
 
@@ -989,6 +1063,12 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  $("visual-recipe").addEventListener("change", (event) => {
+    if (state.selectedId) state.visualRecipeSelections[state.selectedId] = event.target.value;
+    updateVisualPlanControls();
+  });
+  $("create-visual-plan").addEventListener("click", createVisualPlan);
+  $("open-visual-plan").addEventListener("click", openVisualPlan);
   $("show-other-takes").addEventListener("click", () => {
     state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
     const segment = currentSegment();
@@ -1117,7 +1197,7 @@ async function start() {
   bindEvents();
   try {
     await refreshState();
-    await checkProvider();
+    await checkPreviewAvailability();
   } catch (error) {
     $("project-name").textContent = "Could not load project";
     toast(error.message);

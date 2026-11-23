@@ -22,7 +22,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 button, select, summary { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
 
-.topbar { flex: 0 0 auto; min-height: 78px; display: flex; align-items: center; gap: 34px; padding: 12px 28px; background: var(--sheet); border-bottom: 1px solid var(--ink); }
+.topbar { flex: 0 0 auto; min-height: 78px; display: flex; align-items: center; gap: 20px; padding: 12px 28px; background: var(--sheet); border-bottom: 1px solid var(--ink); }
 .wordmark { display: flex; gap: 11px; align-items: center; color: var(--ink); text-decoration: none; font-size: 13px; line-height: 1.05; font-weight: 800; letter-spacing: -.03em; }
 .mark { width: 35px; height: 35px; display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 2px; padding: 5px; background: var(--ink); transform: rotate(-4deg); }
 .mark i { display: block; background: var(--red); height: 60%; }
@@ -31,10 +31,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .project-head { display: grid; gap: 2px; min-width: 0; }
 .quiet-label, .section-kicker { color: var(--muted); font-weight: 750; font-size: 10px; letter-spacing: .11em; }
 .project-head strong { font-size: 14px; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.provider-state { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); font-size: 12px; }
-.status-dot { width: 9px; height: 9px; border-radius: 50%; background: #aab0b1; box-shadow: 0 0 0 3px #e8e9e6; }
-.provider-state.ready .status-dot { background: #278953; }
-.provider-state.missing .status-dot { background: var(--red); }
+.visual-planner { flex: 0 1 360px; min-width: 290px; margin-left: auto; display: grid; grid-template-columns: minmax(125px, 1fr) auto; align-items: center; gap: 4px 10px; }
+.visual-recipe-field { min-width: 0; display: grid; gap: 3px; }
+.visual-recipe-field > span { overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.visual-recipe-field select { width: 100%; min-width: 0; height: 31px; padding: 4px 7px; border: 1px solid var(--line); background: var(--paper); font-size: 10px; }
+.visual-recipe-field select:disabled { cursor: not-allowed; opacity: .7; }
+.visual-plan-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.button-visual { min-height: 32px; padding: 0 9px; border: 1px solid var(--ink); background: var(--cyan); box-shadow: 2px 2px 0 var(--ink); font-size: 10px; font-weight: 750; white-space: nowrap; }
+.button-visual:disabled { opacity: .48; box-shadow: none; cursor: not-allowed; }
+.visual-plan-actions .text-button { flex: 0 0 auto; padding: 4px 0; font-size: 10px; }
+.visual-plan-status { grid-column: 1 / -1; min-width: 0; color: var(--muted); font-size: 9px; line-height: 1.25; overflow-wrap: anywhere; }
 .header-playback { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .header-playback-button { min-width: 154px; min-height: 45px; display: grid; align-content: center; gap: 3px; padding: 5px 10px; border: 1px solid var(--ink); text-align: left; background: var(--cyan); box-shadow: 3px 3px 0 var(--ink); }
 .header-playback-button strong { font-size: 11px; line-height: 1.1; }
@@ -248,7 +254,7 @@ audio { width: 100%; height: 34px; }
 @media (max-width: 1120px) {
   .topbar { flex-wrap: wrap; gap: 8px 18px; }
   .header-playback { order: 3; width: 100%; }
-  .provider-state { order: 2; }
+  .visual-planner { order: 2; flex: 1 1 360px; }
   .layout { grid-template-columns: 230px minmax(360px, 1fr); grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr); }
   .sequence-panel, .editor-panel { grid-row: 1; }
   .review-panel { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--line); border-left: 0; }
@@ -259,7 +265,7 @@ audio { width: 100%; height: 34px; }
   .wordmark { font-size: 11px; }
   .mark { width: 31px; height: 31px; }
   .project-head { display: none; }
-  .provider-state { font-size: 10px; }
+  .visual-planner { order: 2; flex: 1 0 100%; min-width: 0; width: 100%; margin-left: 0; }
   .header-playback { flex-wrap: wrap; }
   .header-playback-button { min-width: 0; flex: 1 1 145px; }
   .preview-volume { flex: 0 0 104px; }

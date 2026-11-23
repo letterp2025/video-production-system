@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Per-segment visual animation plan",
+  "description": "Renderer-neutral planning data stored in a selected project's audio/visuals folder. This schema is not a rendering contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "segment", "animation", "visual"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "source_text_sha256"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "animation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipe_id", "recipe_title"],
+      "properties": {
+        "recipe_id": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^ANM-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
+          ]
+        },
+        "recipe_title": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 160 }
+          ]
+        }
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "start_seconds", "duration_seconds", "elements"],
+      "properties": {
+        "description": { "type": "string", "maxLength": 24000 },
+        "start_seconds": { "type": "number", "minimum": 0 },
+        "duration_seconds": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "number", "minimum": 0 }
+          ]
+        },
+        "elements": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "type": "object" }
+        }
+      }
+    }
+  }
+}

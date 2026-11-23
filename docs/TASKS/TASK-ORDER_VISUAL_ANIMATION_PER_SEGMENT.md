@@ -1,6 +1,14 @@
 # Task Order: Visual Animation Plans Per Segment
 
-**Task ID:** VAP-001 | **Status:** Planned | **Last updated:** 2026-11-23
+**Task ID:** VAP-001 | **Status:** Implemented | **Last updated:** 2026-11-23
+
+## Implementation record
+
+- The workbench header now identifies the selected beat, offers tracked `ANM-*` recipes plus a custom-plan option, and creates one plan at `audio/visuals/<segment-id>.json`.
+- The version-1 schema is tracked at [`visual_plan.schema.json`](../../tools/audio_narration_generator/visual_plan.schema.json). Creation is atomic and non-overwriting; the workbench checks the current manifest hash, rejects unsafe paths/symlinks, and opens an existing plan in the operating system's default app.
+- Each plan stores the selected segment ID, title, and approved-text SHA-256. A text hash mismatch reports **Needs review** without changing the file. The workflow does not render or modify narration/audio.
+- Workbench tests and user documentation cover this feature in [`tools/audio_narration_generator/README.md`](../../tools/audio_narration_generator/README.md#visual-plan-for-a-beat).
+- The renderer/preview/editor integration remains a separate follow-up and is not part of VAP-001.
 
 ## Objective
 

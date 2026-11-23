@@ -70,6 +70,128 @@ class ProjectTest(unittest.TestCase):
         self.assertNotIn(str(self.root), encoded)
         self.assertEqual([item["id"] for item in payload["segments"]], ["opening-hook", "next-beat"])
 
+    def test_visual_plan_creation_is_atomic_project_local_and_manifest_independent(self):
+        recipes = [{"id": "ANM-test-reveal", "title": "Test reveal"}]
+        manifest_before = self.manifest.read_bytes()
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        with mock.patch.object(workbench, "visual_animation_recipes", return_value=recipes):
+            result = self.project.create_visual_plan("opening-hook", "ANM-test-reveal", manifest_hash)
+            plan_path = self.audio / "visuals" / "opening-hook.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            state = result["state"]
+
+        self.assertEqual(result["relative_path"], "visuals/opening-hook.json")
+        self.assertTrue(plan_path.is_relative_to(self.audio))
+        self.assertEqual(plan["schema_version"], 1)
+        self.assertEqual(plan["segment"]["id"], "opening-hook")
+        self.assertEqual(plan["segment"]["source_text_sha256"], workbench.text_hash("Start with a question."))
+        self.assertEqual(plan["animation"], {"recipe_id": "ANM-test-reveal", "recipe_title": "Test reveal"})
+        self.assertEqual(state["segments"][0]["visual_plan"]["status"], "saved")
+        self.assertEqual(self.manifest.read_bytes(), manifest_before)
+
+    def test_custom_plan_duplicate_create_and_manifest_conflict(self):
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        created = self.project.create_visual_plan("opening-hook", None, manifest_hash)
+        path = self.audio / "visuals" / "opening-hook.json"
+        before = path.read_bytes()
+        plan = json.loads(before)
+        self.assertIsNone(plan["animation"]["recipe_id"])
+        self.assertIsNone(plan["animation"]["recipe_title"])
+        self.assertEqual(created["state"]["segments"][0]["visual_plan"]["status"], "saved")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "already exists") as conflict:
+            self.project.create_visual_plan("opening-hook", None, manifest_hash)
+        self.assertEqual(conflict.exception.status, 409)
+        self.assertEqual(path.read_bytes(), before)
+        with self.assertRaisesRegex(workbench.WorkbenchError, "manifest changed"):
+            self.project.create_visual_plan("next-beat", None, "0" * 64)
+
+    def test_open_visual_plan_uses_default_app_for_only_its_confined_file(self):
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        self.project.create_visual_plan("opening-hook", None, manifest_hash)
+        plan_path = self.audio / "visuals" / "opening-hook.json"
+        if hasattr(workbench.os, "startfile"):
+            with mock.patch.object(workbench.os, "startfile") as startfile:
+                self.project.open_visual_plan("opening-hook")
+            startfile.assert_called_once_with(str(plan_path))
+        else:
+            with mock.patch.object(workbench.subprocess, "Popen") as popen:
+                self.project.open_visual_plan("opening-hook")
+            popen.assert_called_once()
+            self.assertIn(str(plan_path), popen.call_args.args[0])
+
+    def test_visual_plan_is_marked_for_review_when_approved_words_change(self):
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        self.project.create_visual_plan("opening-hook", None, manifest_hash)
+        plan_path = self.audio / "visuals" / "opening-hook.json"
+        before = plan_path.read_bytes()
+        self.data["segments"][0]["text"] = "Start with a different question."
+        self.write_manifest()
+
+        plan_state = self.project.state_payload()["segments"][0]["visual_plan"]
+        self.assertEqual(plan_state["status"], "needs_review")
+        self.assertEqual(plan_path.read_bytes(), before)
+
+    def test_invalid_oversized_and_path_escaping_visual_plans_are_rejected(self):
+        visual_dir = self.audio / "visuals"
+        visual_dir.mkdir()
+        plan_path = visual_dir / "opening-hook.json"
+        plan_path.write_text("{broken", encoding="utf-8")
+        plan_state = self.project.state_payload()["segments"][0]["visual_plan"]
+        self.assertEqual(plan_state["status"], "invalid")
+        self.assertTrue(plan_state["can_open"])
+
+        plan_path.write_text("x" * 20, encoding="utf-8")
+        with mock.patch.object(workbench, "MAX_VISUAL_PLAN_BYTES", 10):
+            plan_state = self.project.state_payload()["segments"][0]["visual_plan"]
+        self.assertEqual(plan_state["status"], "invalid")
+        self.assertFalse(plan_state["can_open"])
+        with self.assertRaisesRegex(workbench.WorkbenchError, "Invalid segment ID"):
+            self.project._visual_plan_path("../outside")
+
+    def test_visual_recipe_catalog_reads_only_named_library_entries(self):
+        library = self.root / "library"
+        entry = library / "ANM-test-reveal"
+        entry.mkdir(parents=True)
+        (entry / "NOTES.md").write_text("# ANM-test-reveal — Test reveal\n", encoding="utf-8")
+        with mock.patch.object(workbench, "VISUAL_ANIMATIONS_DIR", library):
+            self.assertEqual(workbench.visual_animation_recipes(), [{"id": "ANM-test-reveal", "title": "Test reveal"}])
+
+    def test_visual_plan_rejects_recipe_not_in_library(self):
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        with mock.patch.object(workbench, "visual_animation_recipes", return_value=[]):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "Choose a recipe"):
+                self.project.create_visual_plan("opening-hook", "ANM-unlisted", manifest_hash)
+        self.assertFalse((self.audio / "visuals").exists())
+
+    def test_visual_plan_directory_symlink_cannot_escape_project_audio(self):
+        visual_dir = self.audio / "visuals"
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        original_is_symlink = Path.is_symlink
+
+        def pretend_visual_dir_is_symlink(path):
+            return path == visual_dir or original_is_symlink(path)
+
+        with mock.patch.object(Path, "is_symlink", pretend_visual_dir_is_symlink):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "cannot be a symlink"):
+                self.project.create_visual_plan("opening-hook", None, manifest_hash)
+        self.assertFalse(visual_dir.exists())
+
+    def test_visual_plan_file_symlink_is_invalid_and_never_opened(self):
+        visual_dir = self.audio / "visuals"
+        visual_dir.mkdir()
+        plan_path = visual_dir / "opening-hook.json"
+        original_is_symlink = Path.is_symlink
+
+        def pretend_plan_is_symlink(path):
+            return path == plan_path or original_is_symlink(path)
+
+        with mock.patch.object(Path, "is_symlink", pretend_plan_is_symlink):
+            plan_state = self.project.state_payload()["segments"][0]["visual_plan"]
+            self.assertEqual(plan_state["status"], "invalid")
+            self.assertFalse(plan_state["can_open"])
+            with self.assertRaises(workbench.WorkbenchError):
+                self.project.open_visual_plan("opening-hook")
+
     def test_state_includes_active_take_durations_for_playback_following(self):
         durations = {"opening-hook": 1.0, "next-beat": 0.5}
         for segment_id, duration in durations.items():
@@ -400,6 +522,73 @@ class HttpTest(unittest.TestCase):
         self.assertNotIn("ref.wav", encoded)
         self.assertNotIn("ref words", encoded)
 
+    def test_visual_plan_routes_create_and_open_only_the_selected_project_file(self):
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        body = json.dumps({
+            "segment_id": "beat-one", "recipe_id": None, "manifest_hash": manifest_hash,
+        }).encode("utf-8")
+        request = Request(
+            self.base + "/api/visuals/create", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urlopen(request) as response:
+            self.assertEqual(response.status, 201)
+            payload = json.loads(response.read())
+        plan_path = self.manifest.parent / "visuals" / "beat-one.json"
+        self.assertEqual(payload["relative_path"], "visuals/beat-one.json")
+        self.assertTrue(plan_path.is_file())
+        self.assertEqual(payload["state"]["segments"][0]["visual_plan"]["status"], "saved")
+
+        open_body = json.dumps({"segment_id": "beat-one"}).encode("utf-8")
+        open_request = Request(
+            self.base + "/api/visuals/open", data=open_body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with mock.patch.object(self.project, "open_visual_plan") as open_plan:
+            with urlopen(open_request) as response:
+                self.assertEqual(response.status, 200)
+                self.assertTrue(json.loads(response.read())["ok"])
+        open_plan.assert_called_once_with("beat-one")
+
+    def test_visual_plan_route_rejects_path_traversal_and_stale_manifest_hash(self):
+        body = json.dumps({
+            "segment_id": "../outside", "recipe_id": None,
+            "manifest_hash": self.project.state_payload()["manifest_hash"],
+        }).encode("utf-8")
+        request = Request(
+            self.base + "/api/visuals/create", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with self.assertRaises(HTTPError) as context:
+            urlopen(request)
+        self.assertEqual(context.exception.code, 404)
+
+        body = json.dumps({
+            "segment_id": "beat-one", "recipe_id": None, "manifest_hash": "0" * 64,
+        }).encode("utf-8")
+        request = Request(
+            self.base + "/api/visuals/create", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with self.assertRaises(HTTPError) as context:
+            urlopen(request)
+        self.assertEqual(context.exception.code, 409)
+
+    def test_visual_plan_route_rejects_cross_origin_post(self):
+        body = json.dumps({
+            "segment_id": "beat-one", "recipe_id": None,
+            "manifest_hash": self.project.state_payload()["manifest_hash"],
+        }).encode("utf-8")
+        request = Request(
+            self.base + "/api/visuals/create", data=body,
+            headers={"Content-Type": "application/json", "Origin": f"http://example.org:{self.server.server_port}"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as context:
+            urlopen(request)
+        self.assertEqual(context.exception.code, 403)
+        self.assertFalse((self.manifest.parent / "visuals").exists())
+
     def test_take_audio_route_serves_only_manifest_associated_audio(self):
         take = self.manifest.parent / "segments" / "beat-one" / "beat-one_take-001.wav"
         take.parent.mkdir(parents=True)
@@ -516,6 +705,8 @@ class HttpTest(unittest.TestCase):
                 with self.assertRaises(HTTPError) as context:
                     urlopen(request)
                 self.assertEqual(context.exception.code, 409)
+                with self.assertRaisesRegex(workbench.WorkbenchError, "narration generation, or assembly"):
+                    self.project.create_visual_plan("beat-one", None, digest)
             finally:
                 release.set()
                 thread.join(timeout=3)

@@ -17,7 +17,7 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes })", context);
+  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes, renderVisualPlanner })", context);
 }
 
 test("every direct DOM reference exists in the workbench markup", () => {
@@ -28,6 +28,50 @@ test("every direct DOM reference exists in the workbench markup", () => {
   assert.deepEqual([...refs].filter((id) => !ids.has(id)).sort(), []);
 });
 
+test("visual planning replaces the provider badge without removing Codex suggestions", () => {
+  const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
+  const script = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
+  assert.match(html, /id="visual-recipe"/);
+  assert.match(html, /id="create-visual-plan"[^>]*>Create visual JSON/);
+  assert.match(html, /id="open-visual-plan"[^>]*>Open JSON/);
+  assert.doesNotMatch(html, /id="provider-state"|Codex CLI found/);
+  assert.match(html, /id="ask-codex"/);
+  assert.match(script, /\/api\/visuals\/create/);
+  assert.match(script, /\/api\/visuals\/open/);
+});
+
+test("visual selector follows the selected beat and locks after a plan exists", () => {
+  function node() {
+    return {
+      children: [],
+      replaceChildren() { this.children = []; },
+      append(...children) { this.children.push(...children); },
+      addEventListener() {},
+      get options() { return this.children; },
+    };
+  }
+  const elements = {
+    "visual-recipe": node(), "create-visual-plan": node(),
+    "open-visual-plan": node(), "visual-plan-status": node(),
+    "visual-beat-label": node(),
+  };
+  const { state, renderVisualPlanner } = loadWorkbench(elements, { createElement: node });
+  state.project = { visual_recipes: [{ id: "ANM-reveal", title: "Reveal" }] };
+  renderVisualPlanner({ id: "first-beat", position: 1, visual_plan: { status: "none", relative_path: "visuals/first-beat.json", exists: false, can_open: false } });
+  assert.match(elements["visual-beat-label"].textContent, /beat 01 · first-beat/);
+  assert.deepEqual(elements["visual-recipe"].children.map((option) => option.value), ["", "ANM-reveal"]);
+  assert.match(elements["visual-plan-status"].textContent, /No plan yet/);
+  renderVisualPlanner({
+    id: "second-beat", position: 2,
+    visual_plan: { status: "saved", relative_path: "visuals/second-beat.json", exists: true, can_open: true, recipe_id: "ANM-reveal", recipe_title: "Reveal" },
+  });
+  assert.match(elements["visual-beat-label"].textContent, /beat 02 · second-beat/);
+  assert.equal(elements["visual-recipe"].value, "ANM-reveal");
+  assert.equal(elements["visual-recipe"].disabled, true);
+  assert.equal(elements["create-visual-plan"].disabled, true);
+  assert.equal(elements["open-visual-plan"].hidden, false);
+});
+
 test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {
   function node() {
     return {
@@ -35,6 +79,7 @@ test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {
       replaceChildren() { this.children = []; },
       append(...children) { this.children.push(...children); },
       setAttribute(key, value) { this.attributes[key] = value; },
+      addEventListener() {},
     };
   }
   const summary = node();

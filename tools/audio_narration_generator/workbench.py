@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import math
 import mimetypes
 import os
 import platform
@@ -29,13 +30,16 @@ import generate_narration as narration
 
 
 TOOL_DIR = Path(__file__).resolve().parent
+REPOSITORY_ROOT = TOOL_DIR.parents[1]
 STATIC_DIR = TOOL_DIR / "workbench_static"
 AI_GUIDE_PATH = TOOL_DIR / "ai_guide.json"
 AI_SCHEMA_PATH = TOOL_DIR / "ai_suggestion.schema.json"
+VISUAL_ANIMATIONS_DIR = REPOSITORY_ROOT / "libraries" / "visual_animations_library"
 MAX_REQUEST_BYTES = 128_000
 MAX_NOTE_CHARS = 6_000
 MAX_TEXT_CHARS = 24_000
 MAX_TITLE_CHARS = 160
+MAX_VISUAL_PLAN_BYTES = 1_000_000
 MAX_TTS_VALUES = set(narration.TTS_PARAMETER_DEFAULTS)
 MAX_RESPONSE_CHARS = 12_000
 MAX_WORK_STATE_BYTES = 5_000_000
@@ -76,6 +80,55 @@ def atomic_write_json(path: Path, value: Any) -> None:
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def atomic_create_json(path: Path, value: Any) -> None:
+    """Atomically create JSON without replacing a file another writer created."""
+    if path.parent.is_symlink() or not path.parent.is_dir():
+        raise OSError("The visual plan folder is unavailable or unsafe.")
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="\n", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temp_path = Path(stream.name)
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temp_path, path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def visual_animation_recipes() -> list[dict[str, str]]:
+    """Read recipe IDs and display names from the tracked library catalog."""
+    if VISUAL_ANIMATIONS_DIR.is_symlink() or not VISUAL_ANIMATIONS_DIR.is_dir():
+        return []
+    recipes: list[dict[str, str]] = []
+    try:
+        entries = sorted(VISUAL_ANIMATIONS_DIR.iterdir(), key=lambda path: path.name.casefold())
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.is_symlink() or not entry.is_dir() or not re.fullmatch(r"ANM-[A-Za-z0-9][A-Za-z0-9_-]{0,63}", entry.name):
+            continue
+        notes = entry / "NOTES.md"
+        if notes.is_symlink() or not notes.is_file():
+            continue
+        try:
+            with notes.open("r", encoding="utf-8") as stream:
+                heading = stream.readline(4097).strip()
+        except (OSError, UnicodeError):
+            continue
+        match = re.fullmatch(rf"#\s+{re.escape(entry.name)}\s+[—–-]\s+(.+?)\s*", heading)
+        title = match.group(1) if match else entry.name.removeprefix("ANM-").replace("-", " ").title()
+        if not title.strip() or len(title) > MAX_TITLE_CHARS:
+            continue
+        recipes.append({"id": entry.name, "title": title})
+    return recipes
 
 
 class Project:
@@ -169,6 +222,200 @@ class Project:
             raise WorkbenchError("Segment not found or the manifest contains a duplicate ID.", 404)
         return matches[0]
 
+    def _visuals_dir(self, create: bool = False) -> Path:
+        root = self.audio_root / "visuals"
+        if root.is_symlink():
+            raise WorkbenchError("The audio/visuals folder cannot be a symlink.")
+        if not root.exists():
+            if not create:
+                return root
+            try:
+                root.mkdir()
+            except FileExistsError:
+                pass
+            except OSError as exc:
+                raise WorkbenchError(f"Could not create audio/visuals: {exc}", 500) from exc
+        if root.is_symlink() or not root.is_dir():
+            raise WorkbenchError("The audio/visuals folder must be a project-local directory.")
+        try:
+            root.resolve(strict=True).relative_to(self.audio_root.resolve(strict=True))
+        except (OSError, ValueError) as exc:
+            raise WorkbenchError("The visual plan folder must remain inside the selected audio folder.") from exc
+        return root
+
+    def _visual_plan_path(self, segment_id: str, create: bool = False) -> Path:
+        if not isinstance(segment_id, str) or not narration.ID_PATTERN.fullmatch(segment_id):
+            raise WorkbenchError("Invalid segment ID.")
+        root = self._visuals_dir(create=create)
+        path = root / f"{segment_id}.json"
+        if path.is_symlink():
+            raise WorkbenchError("A visual plan file cannot be a symlink.")
+        if path.exists():
+            if not path.is_file():
+                raise WorkbenchError("The visual plan path is not a regular file.")
+            try:
+                path.resolve(strict=True).relative_to(root.resolve(strict=True))
+            except (OSError, ValueError) as exc:
+                raise WorkbenchError("The visual plan must remain inside audio/visuals.") from exc
+        return path
+
+    @staticmethod
+    def _validate_visual_plan(plan: Any, segment_id: str, recipes: dict[str, str]) -> None:
+        if not isinstance(plan, dict) or set(plan) != {"schema_version", "segment", "animation", "visual"}:
+            raise ValueError("The plan must contain schema_version, segment, animation, and visual.")
+        if isinstance(plan.get("schema_version"), bool) or plan.get("schema_version") != 1:
+            raise ValueError("The visual plan schema version is unsupported.")
+        segment = plan.get("segment")
+        if not isinstance(segment, dict) or set(segment) != {"id", "title", "source_text_sha256"}:
+            raise ValueError("The visual plan segment fields are invalid.")
+        if segment.get("id") != segment_id:
+            raise ValueError("The visual plan belongs to a different segment.")
+        if not isinstance(segment.get("title"), str) or not segment["title"].strip() or len(segment["title"]) > MAX_TITLE_CHARS:
+            raise ValueError("The visual plan segment title is invalid.")
+        if not isinstance(segment.get("source_text_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", segment["source_text_sha256"]):
+            raise ValueError("The visual plan source-text hash is invalid.")
+
+        animation = plan.get("animation")
+        if not isinstance(animation, dict) or set(animation) != {"recipe_id", "recipe_title"}:
+            raise ValueError("The visual plan animation reference is invalid.")
+        recipe_id = animation.get("recipe_id")
+        recipe_title = animation.get("recipe_title")
+        if recipe_id is None:
+            if recipe_title is not None:
+                raise ValueError("A custom visual plan cannot name a library recipe.")
+        elif (
+            not isinstance(recipe_id, str)
+            or not re.fullmatch(r"ANM-[A-Za-z0-9][A-Za-z0-9_-]{0,63}", recipe_id)
+            or recipe_id not in recipes
+            or not isinstance(recipe_title, str)
+            or not recipe_title.strip()
+            or len(recipe_title) > MAX_TITLE_CHARS
+        ):
+            raise ValueError("The selected animation recipe is unavailable or invalid.")
+
+        visual = plan.get("visual")
+        if not isinstance(visual, dict) or set(visual) != {"description", "start_seconds", "duration_seconds", "elements"}:
+            raise ValueError("The visual plan fields are invalid.")
+        if not isinstance(visual.get("description"), str) or len(visual["description"]) > MAX_TEXT_CHARS:
+            raise ValueError("The visual description is invalid.")
+        start = visual.get("start_seconds")
+        duration = visual.get("duration_seconds")
+        if isinstance(start, bool) or not isinstance(start, (int, float)) or not math.isfinite(start) or start < 0:
+            raise ValueError("Visual start_seconds must be a non-negative finite number.")
+        if duration is not None and (
+            isinstance(duration, bool) or not isinstance(duration, (int, float))
+            or not math.isfinite(duration) or duration < 0
+        ):
+            raise ValueError("Visual duration_seconds must be null or a non-negative finite number.")
+        elements = visual.get("elements")
+        if not isinstance(elements, list) or len(elements) > 500 or any(not isinstance(item, dict) for item in elements):
+            raise ValueError("Visual elements must be a list of up to 500 objects.")
+
+    def _read_visual_plan(self, path: Path) -> Any:
+        try:
+            with path.open("rb") as stream:
+                raw = stream.read(MAX_VISUAL_PLAN_BYTES + 1)
+        except OSError as exc:
+            raise WorkbenchError("The visual plan could not be read.", 500) from exc
+        if len(raw) > MAX_VISUAL_PLAN_BYTES:
+            raise WorkbenchError("The visual plan is larger than the 1 MB workbench limit.", 413)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise WorkbenchError("The visual plan is not valid UTF-8 JSON.") from exc
+
+    def _visual_plan_summary(self, segment: dict[str, Any], recipes: dict[str, str]) -> dict[str, Any]:
+        segment_id = segment["id"]
+        relative_path = f"visuals/{segment_id}.json"
+        try:
+            path = self._visual_plan_path(segment_id)
+        except WorkbenchError:
+            return {"status": "invalid", "exists": False, "can_open": False, "relative_path": relative_path}
+        if not path.exists():
+            return {"status": "none", "exists": False, "can_open": False, "relative_path": relative_path}
+        try:
+            if path.is_symlink() or not path.is_file():
+                raise WorkbenchError("The visual plan path is not a regular file.")
+            if path.stat().st_size > MAX_VISUAL_PLAN_BYTES:
+                return {"status": "invalid", "exists": True, "can_open": False, "relative_path": relative_path}
+            plan = self._read_visual_plan(path)
+            self._validate_visual_plan(plan, segment_id, recipes)
+        except (OSError, WorkbenchError, ValueError):
+            return {"status": "invalid", "exists": True, "can_open": True, "relative_path": relative_path}
+        animation = plan["animation"]
+        status = "needs_review" if plan["segment"]["source_text_sha256"] != text_hash(segment["text"]) else "saved"
+        return {
+            "status": status,
+            "exists": True,
+            "can_open": True,
+            "relative_path": relative_path,
+            "recipe_id": animation["recipe_id"],
+            "recipe_title": animation["recipe_title"],
+        }
+
+    def create_visual_plan(self, segment_id: str, recipe_id: str | None, expected_hash: str) -> dict[str, Any]:
+        if not self.manifest_operation_lock.acquire(blocking=False):
+            raise WorkbenchError("A manifest edit, narration generation, or assembly is already running.", 409)
+        try:
+            with self.lock:
+                data, current_hash = self.read_manifest()
+                self._check_manifest_hash(expected_hash, current_hash)
+                _, segment = self.find_segment(data, segment_id)
+                recipes = {item["id"]: item["title"] for item in visual_animation_recipes()}
+                if recipe_id is not None and not isinstance(recipe_id, str):
+                    raise WorkbenchError("Choose a recipe from the Visual Animations Library or use a custom plan.")
+                if recipe_id == "":
+                    recipe_id = None
+                if recipe_id is not None and recipe_id not in recipes:
+                    raise WorkbenchError("Choose a recipe from the Visual Animations Library or use a custom plan.")
+                recipe_path = self._visual_plan_path(segment_id, create=True)
+                if recipe_path.exists() or recipe_path.is_symlink():
+                    raise WorkbenchError("A visual plan already exists for this beat. Open it to review; it was not overwritten.", 409)
+                segment_title = segment.get("title", segment_id)
+                if not isinstance(segment_title, str) or not segment_title.strip() or len(segment_title) > MAX_TITLE_CHARS:
+                    segment_title = segment_id
+                plan = {
+                    "schema_version": 1,
+                    "segment": {
+                        "id": segment_id,
+                        "title": segment_title,
+                        "source_text_sha256": text_hash(segment["text"]),
+                    },
+                    "animation": {
+                        "recipe_id": recipe_id,
+                        "recipe_title": recipes[recipe_id] if recipe_id else None,
+                    },
+                    "visual": {"description": "", "start_seconds": 0, "duration_seconds": None, "elements": []},
+                }
+                try:
+                    atomic_create_json(recipe_path, plan)
+                except FileExistsError as exc:
+                    raise WorkbenchError("A visual plan already exists for this beat. Open it to review; it was not overwritten.", 409) from exc
+                except OSError as exc:
+                    raise WorkbenchError(f"Could not create the visual plan: {exc}", 500) from exc
+                return {"relative_path": f"visuals/{segment_id}.json", "state": self.state_payload()}
+        finally:
+            self.manifest_operation_lock.release()
+
+    def open_visual_plan(self, segment_id: str) -> None:
+        with self.lock:
+            data, _ = self.read_manifest()
+            self.find_segment(data, segment_id)
+            path = self._visual_plan_path(segment_id)
+            if not path.is_file() or path.is_symlink():
+                raise WorkbenchError("No safe visual plan file is available for this beat.", 404)
+            if path.stat().st_size > MAX_VISUAL_PLAN_BYTES:
+                raise WorkbenchError("The visual plan is larger than the 1 MB workbench limit.", 413)
+            try:
+                if os.name == "nt":
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+                else:
+                    subprocess.Popen(["xdg-open", str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+            except (OSError, AttributeError) as exc:
+                raise WorkbenchError(f"Could not open the visual plan in the default app: {exc}", 500) from exc
+
     def _sync_stale(self, data: dict[str, Any], state: dict[str, Any]) -> bool:
         changed = False
         by_id = {segment["id"]: segment for segment in data["segments"]}
@@ -196,6 +443,8 @@ class Project:
             state = self.read_state()
             if self._sync_stale(data, state):
                 self.write_state(state)
+            visual_recipes = visual_animation_recipes()
+            recipes_by_id = {item["id"]: item["title"] for item in visual_recipes}
             segments = []
             for index, segment in enumerate(data["segments"]):
                 segment_id = segment["id"]
@@ -237,6 +486,7 @@ class Project:
                     "audio_url": f"/api/audio/segment/{segment_id}" if selected else None,
                     "takes": self._segment_takes(data, segment),
                     "work": self._work_summary(work, segment["text"]),
+                    "visual_plan": self._visual_plan_summary(segment, recipes_by_id),
                 })
             assembled = self._latest_assembly()
             assembly_current = (
@@ -249,6 +499,7 @@ class Project:
                 "project_status": data.get("project_status", "in_progress"),
                 "manifest_hash": manifest_digest,
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
+                "visual_recipes": visual_recipes,
                 "tts_defaults": {key: value for key, value in data["settings"].items() if key in MAX_TTS_VALUES},
                 "pause_ms": data["settings"].get("pause_ms", 350),
                 "segments": segments,
@@ -946,13 +1197,7 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path == "/api/state":
                     self._json(200, project.state_payload())
                 elif self.path == "/api/provider":
-                    provider = {"name": "Codex", "available": bool(codex_path), "executable": bool(codex_path)}
-                    if codex_path:
-                        result = run_tool([codex_path, "--version"], 10)
-                        provider["available"] = result["ok"]
-                        provider["version"] = result["output"] if result["ok"] else "Version check failed"
                     self._json(200, {
-                        "codex": provider,
                         "preview": {"available": platform.system() == "Windows", "backend": "Windows SAPI" if platform.system() == "Windows" else "unsupported on this system"},
                     })
                 elif self.path.startswith("/api/audio/segment/"):
@@ -1028,7 +1273,20 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 return
             try:
                 body = self._read_json()
-                if self.path == "/api/segment/save":
+                if self.path == "/api/visuals/create":
+                    recipe_id = body.get("recipe_id")
+                    if recipe_id is not None and not isinstance(recipe_id, str):
+                        raise WorkbenchError("recipe_id must be a library recipe ID or null.")
+                    result = project.create_visual_plan(
+                        self._required_string(body, "segment_id"),
+                        recipe_id,
+                        self._required_string(body, "manifest_hash"),
+                    )
+                    self._json(201, result)
+                elif self.path == "/api/visuals/open":
+                    project.open_visual_plan(self._required_string(body, "segment_id"))
+                    self._json(200, {"ok": True})
+                elif self.path == "/api/segment/save":
                     result = project.save_segment(
                         self._required_string(body, "segment_id"), self._object(body, "updates"),
                         self._required_string(body, "manifest_hash"),

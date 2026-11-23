@@ -34,8 +34,18 @@
       </label>
       <span id="playback-status" class="playback-status" role="status" aria-live="polite"></span>
     </div>
-    <div class="provider-state" id="provider-state" aria-live="polite">
-      <span class="status-dot"></span><span id="provider-label">Checking Codex</span>
+    <div class="visual-planner" aria-label="Visual animation plan for the selected beat">
+      <label class="visual-recipe-field" for="visual-recipe">
+        <span id="visual-beat-label">Visual for selected beat</span>
+        <select id="visual-recipe" disabled>
+          <option value="">Custom plan (no library recipe)</option>
+        </select>
+      </label>
+      <div class="visual-plan-actions">
+        <button id="create-visual-plan" class="button button-visual" type="button" disabled>Create visual JSON</button>
+        <button id="open-visual-plan" class="text-button" type="button" hidden>Open JSON</button>
+      </div>
+      <span id="visual-plan-status" class="visual-plan-status" role="status" aria-live="polite">Loading plan status…</span>
     </div>
   </header>
 

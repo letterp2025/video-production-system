@@ -98,6 +98,14 @@ python tools/audio_narration_generator/workbench.py `
 
 Manual segment edits are saved with a manifest-byte hash check. If another editor changes the file at the same time, the workbench refuses to overwrite it and asks you to reload. Suggestions also store the exact selected-text hash used at request time. If that text changes while Codex is working or before acceptance, the suggestion is marked stale and cannot be applied.
 
+### Visual plan for a beat
+
+The header's **Visual for beat …** selector is tied to the currently selected segment. Choose a recipe from the tracked [Visual Animations Library](../../libraries/visual_animations_library/README.md), or keep **Custom plan (no library recipe)**, then choose **Create visual JSON**. The workbench creates `audio/visuals/<segment-id>.json` in the selected project. The stable manifest ID is used for the filename and recorded inside the plan; recipes remain references to library entries rather than copied code.
+
+Each beat gets one file. A second create request will not replace it; use **Open JSON** to open the existing file in the operating system's default app. After editing it outside the workbench, use **Reload manifest** to refresh its displayed status. If the approved spoken words later change, the workbench marks the plan **Needs review** using its saved source-text SHA-256. It does not rewrite the plan. Invalid, oversized, or unavailable plan files are reported instead of being treated as rendered visuals.
+
+The plan's version-1 format is defined in [`visual_plan.schema.json`](visual_plan.schema.json). It is renderer-neutral planning data only: creating or editing it does not change the narration manifest, regenerate audio, render frames, or add it to a video. Rendering and in-app visual editing remain separate future work.
+
 The workbench rejects its own manifest edits while its generator or assembly process is running. Do not run a separate generator CLI against the same manifest at the same time; a separate process does not share the workbench lock. To force another take of unchanged wording or select an older take, use the generator CLI and manifest procedure below.
 
 ### Codex connection and privacy
@@ -114,7 +122,7 @@ The work queue is saved to `audio/.workbench/workbench_state.json`. It stores se
 
 Quick preview uses the existing Windows SAPI preview and creates no audio file. It is unavailable on macOS and Linux; the workbench reports that limit without choosing another engine. Persistent F5-TTS generation remains available on systems where the user has installed its compatible environment. The app does not bundle F5-TTS, models, or voice recordings.
 
-The web API exposes only the manifest-backed segment fields needed by the interface, parent folder paths for discovered take files, and confined take/assembled WAV playback routes. It does not expose a general path or file browser. Never change the bind address from loopback.
+The web API exposes only the manifest-backed segment fields needed by the interface, parent folder paths for discovered take files, confined take/assembled WAV playback routes, and visual-plan operations constrained to the selected project's `audio/visuals/` folder. It does not expose a general path or file browser. Never change the bind address from loopback.
 
 ### Data boundary
 
@@ -122,6 +130,7 @@ The web API exposes only the manifest-backed segment fields needed by the interf
 |---|---|---|
 | Approved script, segment order/status, voice style, TTS settings | Project `audio/narration_manifest.json` | Text and delivery settings affect take fingerprints; array order and status affect the assembly hash |
 | Editorial notes and suggestions | Project `audio/.workbench/workbench_state.json` | No |
+| Per-beat visual animation plans | Project `audio/visuals/<segment-id>.json` | No |
 | Selected takes, receipts, assembly, and performance records | Project audio folders managed by the existing generator | Existing generator behavior |
 | Generic editing rules and response schema | Public tool folder in this repository | No project data |
 
