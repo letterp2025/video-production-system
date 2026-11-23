@@ -16,6 +16,7 @@ MAX_LAYER_JSON_BYTES = 1_000_000
 MAX_LAYER_ENTRIES = 2_000
 MAX_CUES = 500
 TAKE_ID_PATTERN = re.compile(r"v_layer_[a-z0-9][a-z0-9_-]{0,48}\Z")
+REQUEST_ID_PATTERN = re.compile(r"VIS-[0-9]{3,6}\Z")
 RENDERERS = {"effectcraft", "manim", "gsap"}
 MAPPING_LAYERS = {"music", "sfx"}
 
@@ -90,10 +91,20 @@ def validate_visual_take(
             raise ValueError("A visual take contains an invalid narration segment ID.")
         if segment_id not in known_ids:
             raise ValueError(f"Visual take references unknown narration segment {segment_id}.")
-        if not isinstance(entry, dict) or set(entry) != {
+        if not isinstance(entry, dict) or not {
             "visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference",
-        }:
+        }.issubset(entry) or not set(entry).issubset({
+            "visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference",
+            "request_ids", "selected_request_id",
+        }):
             raise ValueError(f"Visual entry {segment_id} has invalid fields.")
+        request_ids = entry.get("request_ids", [])
+        selected_request_id = entry.get("selected_request_id")
+        if (not isinstance(request_ids, list) or len(request_ids) > 500
+            or any(not isinstance(item, str) or not REQUEST_ID_PATTERN.fullmatch(item) for item in request_ids)
+            or len(set(request_ids)) != len(request_ids)
+            or (selected_request_id is not None and selected_request_id not in request_ids)):
+            raise ValueError(f"Visual request selection for {segment_id} is invalid.")
         intent = entry.get("visual_intent")
         if not isinstance(intent, str) or len(intent) > MAX_TEXT_CHARS:
             raise ValueError(f"Visual intent for {segment_id} is invalid.")
@@ -132,6 +143,8 @@ def visual_segment_status(entry: dict[str, Any] | None, segment: dict[str, Any],
         return "pending"
     if entry["source_text_sha256"] != text_hash(segment["text"]):
         return "needs_review"
+    if entry.get("selected_request_id"):
+        return "saved"
     if not entry["visual_intent"].strip():
         return "pending"
     implementation = entry["implementation"]

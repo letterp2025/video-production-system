@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import ipaddress
 import json
 import mimetypes
@@ -18,7 +19,7 @@ import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import generate_narration as narration
 
@@ -28,6 +29,23 @@ from workbench_common import (
     visual_animation_recipes,
 )
 from workbench_project import Project
+
+
+def library_catalog(config_path: Path | None = None):
+    """Reuse the browser's read-only catalog without starting its server."""
+    path = TOOL_DIR.parent / "library-browser" / "server.py"
+    spec = importlib.util.spec_from_file_location("vps_visual_library", path)
+    if spec is None or spec.loader is None:
+        raise WorkbenchError("Visual Library Browser code is unavailable.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        private_root = module.private_root_from_config(config_path) if config_path else None
+    except ValueError as exc:
+        raise WorkbenchError(str(exc)) from exc
+    if private_root and not private_root.is_dir():
+        raise WorkbenchError("Configured private library folder is unavailable.")
+    return module.Catalog(TOOL_DIR.parents[1] / "libraries", private_root)
 
 
 def build_codex_prompt(guide_json: str, context: dict[str, Any]) -> str:
@@ -111,6 +129,8 @@ def run_tool(command: list[str], timeout: int, input_text: str | None = None) ->
 
 
 def create_handler(project: Project, codex_path: str | None, python_path: str) -> type[BaseHTTPRequestHandler]:
+    if not hasattr(project, "catalog"):
+        project.catalog = library_catalog()
     sequence_run_lock = threading.Lock()
     sequence_state_lock = threading.Lock()
     sequence_process: subprocess.Popen[str] | None = None
@@ -200,6 +220,21 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._send_file(path, content_type)
                 elif self.path == "/api/state":
                     self._json(200, project.state_payload())
+                elif self.path == "/api/library/entries":
+                    self._json(200, {"entries": project.catalog.entries(), "private_available": "private" in project.catalog.roots})
+                elif self.path.startswith("/api/library/entry?"):
+                    query = parse_qs(urlparse(self.path).query)
+                    entry = project.catalog.entry(query.get("visibility", [""])[0], query.get("library", [""])[0], query.get("id", [""])[0])
+                    self._json(200, entry) if entry else self._json(404, {"error": "Library entry unavailable."})
+                elif self.path.startswith("/api/library/media/"):
+                    parts = self.path.removeprefix("/api/library/media/").split("/", 1)
+                    if len(parts) != 2:
+                        raise WorkbenchError("Invalid library preview.", 404)
+                    try:
+                        media_path = project.catalog.media(parts[0], unquote(parts[1]))
+                    except (ValueError, OSError) as exc:
+                        raise WorkbenchError("Library preview unavailable.", 404) from exc
+                    self._send_file(media_path, mimetypes.guess_type(media_path.name)[0] or "application/octet-stream", allow_range=True)
                 elif self.path == "/api/provider":
                     self._json(200, {
                         "preview": {"available": platform.system() == "Windows", "backend": "Windows SAPI" if platform.system() == "Windows" else "unsupported on this system"},
@@ -289,6 +324,17 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._json(200, {"state": project.select_visual_take(self._required_string(body, "take_id"))})
                 elif self.path == "/api/visual-takes/open":
                     project.open_visual_take(self._required_string(body, "take_id"))
+                    self._json(200, {"ok": True})
+                elif self.path == "/api/visual-requests/create":
+                    result = project.create_visual_request(self._required_string(body, "segment_id"), self._required_string(body, "brief"),
+                        body.get("renderer"), body.get("references", []), self._required_string(body, "manifest_hash"))
+                    self._json(201, result)
+                elif self.path == "/api/visual-requests/select":
+                    self._json(200, {"state": project.select_visual_request(self._required_string(body, "segment_id"), self._required_string(body, "request_id"))})
+                elif self.path == "/api/visual-requests/sfx/create":
+                    self._json(201, project.create_visual_sfx(self._required_string(body, "segment_id"), self._required_string(body, "request_id")))
+                elif self.path == "/api/visual-requests/open":
+                    project.open_visual_request_file(self._required_string(body, "segment_id"), self._required_string(body, "request_id"), self._required_string(body, "filename"))
                     self._json(200, {"ok": True})
                 elif self.path in {"/api/layers/music/create", "/api/layers/sfx/create"}:
                     layer = self.path.split("/")[-2]
@@ -586,6 +632,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8766, help="Local browser port (default: 8766).")
     parser.add_argument("--codex", help="Optional path or command name for the Codex CLI.")
     parser.add_argument("--python", default=sys.executable, help="Python executable used by the existing narration scripts.")
+    parser.add_argument("--library-config", type=Path, help="Local JSON config for an optional private Visual Library root.")
     return parser.parse_args(argv)
 
 
@@ -597,6 +644,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = Project(args.manifest)
         project.read_manifest()
+        project.catalog = library_catalog(args.library_config)
     except WorkbenchError as exc:
         print(str(exc), file=sys.stderr)
         return 2

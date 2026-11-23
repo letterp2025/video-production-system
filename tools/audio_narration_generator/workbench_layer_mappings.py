@@ -9,10 +9,10 @@ import generate_narration as narration
 
 from workbench_common import WorkbenchError, atomic_create_json, text_hash
 from workbench_layer_contracts import MAX_LAYER_JSON_BYTES, validate_audio_mapping
-from workbench_visual_takes import VisualTakeMixin
+from workbench_visual_requests import VisualRequestsMixin
 
 
-class AudioLayerMappingMixin(VisualTakeMixin):
+class AudioLayerMappingMixin(VisualRequestsMixin):
     def _audio_mapping_dir(self, layer: str, *, create: bool = False) -> Path:
         if layer not in {"music", "sfx"}:
             raise WorkbenchError("Choose the Music or Sound Effects layer.")

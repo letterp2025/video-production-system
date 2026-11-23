@@ -118,7 +118,7 @@ class VisualTakeMixin:
 
         by_id = {segment["id"]: segment for segment in narration_data["segments"]}
         entry_statuses = {
-            segment_id: visual_segment_status(document["segments"].get(segment_id), segment, self._project_root())
+            segment_id: self._visual_request_aware_status(take_id, segment_id, document["segments"].get(segment_id), segment)
             for segment_id, segment in by_id.items()
         }
         active_ids = {segment["id"] for segment in narration_data["segments"] if segment.get("status", "active") == "active"}
@@ -214,15 +214,27 @@ class VisualTakeMixin:
         if document is None:
             return {"status": "invalid", "visual_intent": "", "renderer": None, "implementation": None}
         entry = document["segments"].get(segment["id"])
-        status = visual_segment_status(entry, segment, self._project_root())
+        status = self._visual_request_aware_status(selected["take_id"], segment["id"], entry, segment)
         if entry is None:
             status = "pending"
+        request_data = self.visual_requests_payload(selected["take_id"], segment["id"], entry) if entry else {"requests": [], "selected_request_id": None}
         return {
             "status": status,
             "visual_intent": entry["visual_intent"] if entry else "",
             "renderer": entry["renderer"] if entry else None,
             "implementation": entry["implementation"] if entry else None,
+            **request_data,
         }
+
+    def _visual_request_aware_status(self, take_id: str, segment_id: str, entry: dict[str, Any] | None, segment: dict[str, Any]) -> str:
+        status = visual_segment_status(entry, segment, self._project_root())
+        if not entry or not entry.get("selected_request_id") or status == "needs_review":
+            return status
+        items = self.visual_requests_payload(take_id, segment_id, entry)["requests"]
+        selected = next((item for item in items if item["request_id"] == entry["selected_request_id"]), None)
+        if selected and selected.get("source_text_sha256") != text_hash(segment["text"]):
+            return "needs_review"
+        return "saved" if selected and selected["result"]["status"] == "completed" else "invalid"
 
     def create_visual_take(self, take_id: str, title: str, creative_direction: str, expected_hash: str) -> dict[str, Any]:
         if not self.manifest_operation_lock.acquire(blocking=False):

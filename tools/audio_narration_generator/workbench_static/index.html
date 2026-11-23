@@ -68,7 +68,6 @@
         <button id="tab-script-layer" class="layer-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-script-layer" tabindex="0">Script and Narration Layer</button>
         <button id="tab-visual-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-visual-layer" tabindex="-1">Visual Layer</button>
         <button id="tab-music-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-music-layer" tabindex="-1">Music Layer</button>
-        <button id="tab-soundeffects-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-soundeffects-layer" tabindex="-1">SoundEffects Layer</button>
       </div>
 
       <section id="panel-script-layer" class="layer-tab-panel script-layer-panel" role="tabpanel" aria-labelledby="tab-script-layer" tabindex="0">
@@ -203,6 +202,41 @@
                 <div><dt>Entry file</dt><dd id="visual-entry-file">—</dd></div>
               </dl>
             </section>
+            <section class="visual-request-workspace" aria-labelledby="visual-requests-heading">
+              <h2 id="visual-requests-heading">Visual requests for this segment</h2>
+              <p>Each request keeps its own brief, result, and optional sound effects. Select a completed candidate for this take.</p>
+              <div id="visual-request-list" class="visual-request-list" aria-live="polite"></div>
+              <details id="visual-request-create" class="create-take-details">
+                <summary>Create another visual request</summary>
+                <div class="create-take-fields">
+                  <label for="visual-request-brief">Brief for the animation</label>
+                  <textarea id="visual-request-brief" rows="5" maxlength="24000" placeholder="Describe the element, motion, style, and segment export you want."></textarea>
+                  <label for="visual-request-renderer">Renderer preference</label>
+                  <select id="visual-request-renderer"><option value="">Let Codex choose</option><option value="effectcraft">EffectCraft</option><option value="manim">Manim</option><option value="gsap">GSAP</option></select>
+                  <details id="visual-library-browser" class="library-browser">
+                    <summary>Browse Visual Library (optional)</summary>
+                    <p>The library stays read-only. References and notes are copied into this request as catalog IDs only.</p>
+                    <div class="library-filters">
+                      <label>Scope <select id="library-scope"><option value="all">Everything</option><option value="public">Public</option><option value="private">Private</option></select></label>
+                      <label>Type <select id="library-type"><option value="all">Everything</option><option value="visual_reference_library">References</option><option value="visual_elements_library">Elements</option><option value="visual_animations_library">Animations</option></select></label>
+                      <label>Search <input id="library-search" type="search" placeholder="Search library"></label>
+                    </div>
+                    <div id="library-entry-list" class="library-entry-list"></div>
+                    <div id="library-entry-detail" class="library-entry-detail" aria-live="polite">Select an entry to inspect its notes and preview.</div>
+                    <label for="library-reference-note">How should this entry inform the request?</label>
+                    <textarea id="library-reference-note" rows="2" maxlength="4000"></textarea>
+                    <button id="attach-library-entry" type="button" class="button button-outline" disabled>Attach reference</button>
+                    <div id="attached-library-entries" aria-live="polite"></div>
+                  </details>
+                  <button id="create-visual-request" type="button" class="button button-visual">Create request</button>
+                </div>
+              </details>
+            </section>
+            <details class="legacy-plan-details"><summary>Legacy per-segment SFX mapping</summary>
+              <p id="sfx-mapping-status" role="status"></p><p id="sfx-mapping-detail">Existing audio/sfx mappings remain available.</p>
+              <button id="create-sfx-mapping" type="button">Create legacy SFX JSON</button>
+              <button id="open-sfx-mapping" type="button" hidden>Open legacy SFX JSON</button>
+            </details>
             <details class="create-take-details">
               <summary>Create a new visual take</summary>
               <div class="create-take-fields">
@@ -253,22 +287,6 @@
         </div>
       </section>
 
-      <section id="panel-soundeffects-layer" class="layer-tab-panel reserved-layer-panel" role="tabpanel" aria-labelledby="tab-soundeffects-layer" tabindex="0" hidden>
-        <div class="layer-content layer-placeholder">
-          <p class="section-kicker">SOUND EFFECTS LAYER</p>
-          <h1>Sound effects for this beat</h1>
-          <p id="soundeffects-layer-beat" class="layer-segment-context">Select a beat to see its sound effects workspace.</p>
-          <div class="mapping-workspace">
-            <p id="sfx-mapping-status" class="visual-plan-status" role="status" aria-live="polite">No sound effects mapping yet.</p>
-            <p id="sfx-mapping-detail" class="layer-segment-context">A JSON list of project-local cue references. No audio is downloaded, played, mixed, or rendered.</p>
-            <div class="visual-plan-actions"><button id="create-sfx-mapping" class="button button-visual" type="button">Create sound effects JSON</button><button id="open-sfx-mapping" class="text-button" type="button" hidden>Open JSON</button></div>
-          </div>
-          <div class="layer-placeholder-note">
-            <span class="placeholder-rule" aria-hidden="true"></span>
-            <div><strong>Find assets separately</strong><p>Use Asset Finder when ready to locate and review audio assets. The mapping only points to project files.</p></div>
-          </div>
-        </div>
-      </section>
     </section>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>

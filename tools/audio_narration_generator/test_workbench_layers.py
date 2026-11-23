@@ -48,6 +48,56 @@ class LayerProjectTest(unittest.TestCase):
         digest = self.project.state_payload()["manifest_hash"]
         return self.project.create_visual_take(take_id, take_id.replace("_", " ").title(), "A coherent visual treatment across the full narration spine.", digest)
 
+    def test_repeatable_requests_candidate_selection_and_sfx_stay_in_take(self):
+        self.create_take("v_layer_1")
+        self.project.catalog = mock.Mock()
+        self.project.catalog.entry.return_value = {"id": "ELM-example"}
+        digest = self.project.state_payload()["manifest_hash"]
+        first = self.project.create_visual_request("opening-hook", "Retro text reveal", "gsap", [], digest)
+        second = self.project.create_visual_request("opening-hook", "Try a different reveal", None,
+            [{"visibility": "public", "library": "visual_elements_library", "entry_id": "ELM-example", "note": "Use only its palette"}], digest)
+        self.assertEqual((first["request_id"], second["request_id"]), ("VIS-001", "VIS-002"))
+        take = self.root / "visual_layer" / "v_layer_1.json"
+        self.assertEqual(json.loads(take.read_text(encoding="utf-8"))["segments"]["opening-hook"]["request_ids"], ["VIS-001", "VIS-002"])
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / "VIS-002"
+        brief = json.loads((folder / "request.json").read_text(encoding="utf-8"))
+        self.assertEqual(brief["references"][0]["note"], "Use only its palette")
+        self.assertNotIn(str(self.root), json.dumps(brief))
+        self.project.create_visual_sfx("opening-hook", "VIS-002")
+        self.assertTrue((folder / "sfx.json").is_file())
+        self.assertFalse((folder.parent / "VIS-001" / "sfx.json").exists())
+        with self.assertRaisesRegex(workbench.WorkbenchError, "Only a completed"):
+            self.project.select_visual_request("opening-hook", "VIS-002")
+        export = folder / "exports" / "segment.mp4"
+        export.parent.mkdir()
+        export.write_bytes(b"test")
+        result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+        result.update({"status": "completed", "export_path": export.relative_to(self.root).as_posix()})
+        (folder / "result.json").write_text(json.dumps(result), encoding="utf-8")
+        state = self.project.select_visual_request("opening-hook", "VIS-002")
+        self.assertEqual(state["segments"][0]["visual_take_segment"]["selected_request_id"], "VIS-002")
+        self.assertEqual(state["segments"][0]["visual_take_segment"]["status"], "saved")
+        self.create_take("v_layer_2")
+        self.assertEqual(self.project.state_payload()["segments"][0]["visual_take_segment"]["requests"], [])
+
+    def test_library_reference_must_exist_and_result_paths_remain_confined(self):
+        self.create_take()
+        self.project.catalog = mock.Mock()
+        self.project.catalog.entry.return_value = None
+        digest = self.project.state_payload()["manifest_hash"]
+        with self.assertRaisesRegex(workbench.WorkbenchError, "unavailable"):
+            self.project.create_visual_request("opening-hook", "Use reference", None,
+                [{"visibility": "private", "library": "visual_reference_library", "entry_id": "REF-example", "note": ""}], digest)
+        made = self.project.create_visual_request("opening-hook", "Custom with no library", None, [], digest)
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "opening-hook" / "requests" / made["request_id"]
+        result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+        result.update({"status": "completed", "export_path": "../escape.mp4"})
+        (folder / "result.json").write_text(json.dumps(result), encoding="utf-8")
+        entry = self.project.state_payload()["segments"][0]["visual_take_segment"]
+        self.assertEqual(entry["requests"][0]["result"]["status"], "invalid")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "Only a completed"):
+            self.project.select_visual_request("opening-hook", made["request_id"])
+
     def test_take_creation_creates_full_spine_skeleton_and_selects_without_touching_narration(self):
         manifest_before = self.manifest.read_bytes()
         result = self.create_take()
@@ -357,6 +407,20 @@ class LayerHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["state"]["visual_layer"]["selected_take_id"], "v_layer_1")
 
+    def test_visual_request_and_library_routes(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        self.post("/api/visual-takes/create", {"take_id": "v_layer_1", "title": "Retro", "creative_direction": "Retro type.", "manifest_hash": digest})
+        status, catalog = self.post("/api/visual-requests/create", {"segment_id": "beat-one", "brief": "Animate text", "renderer": "gsap", "references": [], "manifest_hash": digest})
+        self.assertEqual(status, 201)
+        self.assertEqual(catalog["request_id"], "VIS-001")
+        self.assertEqual(catalog["state"]["segments"][0]["visual_take_segment"]["requests"][0]["brief"], "Animate text")
+        with urlopen(self.base + "/api/library/entries") as response:
+            self.assertIn("entries", json.loads(response.read()))
+        with mock.patch.object(self.project, "_open_layer_file") as open_file:
+            status, _ = self.post("/api/visual-requests/open", {"segment_id": "beat-one", "request_id": "VIS-001", "filename": "request.json"})
+            self.assertEqual(status, 200)
+            self.assertEqual(open_file.call_args.args[0].name, "request.json")
+
     def test_layer_routes_reject_traversal_and_invalid_segment_ids(self):
         digest = self.project.state_payload()["manifest_hash"]
         for route, payload in (
@@ -380,9 +444,11 @@ class LayerInterfaceContractTest(unittest.TestCase):
             "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input",
             "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping",
             "create-sfx-mapping", "open-sfx-mapping",
+            "visual-request-list", "create-visual-request", "library-entry-list", "attach-library-entry",
         ):
             self.assertIn(f'id="{element_id}"', html)
         self.assertIn('role="tablist" aria-label="Production layers"', html)
+        self.assertNotIn('id="tab-soundeffects-layer"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn("@media (max-width: 720px)", css)
         self.assertIn("@media (max-width: 420px)", css)

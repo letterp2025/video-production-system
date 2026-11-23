@@ -1,6 +1,13 @@
 # Task Order: Segment Layers and Workbench Layout
 
-**Task ID:** SLW-001 | **Status:** Initial implementation complete; target design defined; follow-up implementation pending | **Last updated:** 2026-11-23
+**Task ID:** SLW-001 | **Status:** Target follow-up steps 1–4 implemented; steps 5–9 pending | **Last updated:** 2026-11-23
+
+## Follow-up implementation record (steps 1–4)
+
+- The top-level workbench now has Script and Narration, Visual, and Music tabs. SFX planning is inside Visual Layer. Older per-beat SFX JSON remains accessible in a labeled legacy disclosure.
+- Each take/segment can index multiple `VIS-*` request folders. Each folder contains a preserved `request.json` brief and a separate `result.json` scaffold; an optional `sfx.json` belongs to that candidate. A completed candidate can be selected independently per segment. Version-one take manifests without request fields remain valid.
+- Visual Layer contains the read-only library catalog: public/private scope, reference/element/animation filters, search, detail notes, and local preview. Attachments store only scope, catalog category, stable ID, and a per-reference note in the new request. Optional private library discovery uses `--library-config` and a local config file.
+- This pass includes the minimal result status and confined-path checks needed to list and select completed candidates. The full external-Codex handoff and output preview workflow in step 5 remains pending. Project-wide music, shared ID presentation, and final handoff work remain pending.
 
 ## Implementation record
 
@@ -13,7 +20,7 @@
 
 ## Objective
 
-Use stable narration segments as the spine for brainstorming, selecting, and preparing the assets that will be assembled in a separate non-linear video editor (NLE). VPS is an asset-management and preparation workspace, not an NLE, mixer, or final video renderer. This document records the already implemented prototype and the defined target layer model; the target changes below have not been implemented.
+Use stable narration segments as the spine for brainstorming, selecting, and preparing the assets that will be assembled in a separate non-linear video editor (NLE). VPS is an asset-management and preparation workspace, not an NLE, mixer, or final video renderer. This document records the prototype, the implemented first four follow-up steps, and the remaining target work.
 
 ## Product intent and target design
 
@@ -37,8 +44,8 @@ Still-open design details include exact within-segment SFX timing, whether SFX n
 - A take such as `v_layer_1.json` can try a retro direction across the video; `v_layer_2.json` can try another direction and treat an individual segment differently. Selecting a take selects its mapping for the whole spine. Both manifests remain available, and changing one take does not silently change the other.
 - Every take manifest combines planning with implementation references: an overall creative direction, segment-specific intent, and project-relative paths to folders/files defining elements and animations. Segment mappings use the exact stable IDs from `audio/narration_manifest.json`. Each segment may use EffectCraft, Manim, or GSAP within that take.
 - Most elements and animations will be created for the video project. Reusable library recipes or elements are optional references, never prerequisites. There is no separate plan JSON required before adding an implementation to a take manifest.
-- The implemented take schema currently has one optional library reference and one direct implementation reference per segment. The target workflow expands this to repeatable per-segment requests, each with optional multiple library references/notes and its own result. This is planned schema evolution, not current behavior.
-- The current prototype has separate per-segment Music and SFX JSON create/open/status workflows and four top-level tabs, including a dedicated SoundEffects tab. These are existing behaviors, not the target model above: music is intended to become project-wide, and SFX is intended to move inside Visual Layer and be associated with a visual take and segment.
+- The take schema retains its original optional library reference and direct implementation fields. It now also accepts a per-segment request ID list and a selected completed request ID; each request holds optional multiple library references and notes in its own JSON. Older take manifests remain valid.
+- Per-segment Music and SFX JSON create/open/status workflows still exist. The UI now has three top-level tabs, and the older SFX workflow is under a legacy disclosure in Visual Layer. Music is still per segment; project-wide music remains future work.
 - The [Asset Finder](../../tools/asset_finder/README.md) can search and download audio with a source/license receipt, but it is not integrated into the workbench and does not make a licensing decision.
 - The current top bar contains project identification and narration playback controls. Keep per-segment layer controls in their layer workspaces, not in the global top bar.
 
@@ -252,7 +259,7 @@ The requirements below describe the implemented prototype unless explicitly mark
 
 ## Follow-up scope: target layer model
 
-This work is not implemented by the prototype recorded above. Before treating this task order as complete for the target design, plan and implement the following within a separately approved execution pass:
+Steps 1–4 below are implemented in the current follow-up pass. Steps 5–9 remain open before the full target design is complete:
 
 1. Update navigation to the three target top-level tabs: Script and Narration Layer, Visual Layer, and Music Layer; nest SFX within Visual Layer.
 2. Keep the optional SFX section inside each visual request/candidate in Visual Layer. SFX follows the selected take, stable segment ID, and selected visual candidate; different candidates or takes may have different SFX, and no candidate is required to have SFX.

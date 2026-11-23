@@ -2,6 +2,10 @@
 
 const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, visualRecipeSelections: {}, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
+let libraryEntries = [];
+let librarySelected = null;
+let draftReferences = [];
+let visualContextKey = "";
 const knownTts = [
   ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
   ["target_rms", "Target RMS", "0.01"], ["cross_fade_duration", "Cross-fade seconds", "0.01"],
@@ -54,9 +58,7 @@ function renderVisualPlanner(segment) {
     ? "Beat " + String(segment.position).padStart(2, "0") + " · " + (segment.title || segment.id) + " (" + segment.id + ")"
     : "No beat selected.";
   const musicContext = $("music-layer-beat");
-  const soundEffectsContext = $("soundeffects-layer-beat");
   if (musicContext) musicContext.textContent = beatContext;
-  if (soundEffectsContext) soundEffectsContext.textContent = beatContext;
   renderVisualTake(segment);
   renderAudioMapping("music", segment);
   renderAudioMapping("sfx", segment);
@@ -124,6 +126,141 @@ function renderVisualTake(segment) {
   const open = $("open-visual-take");
   open.hidden = !selected?.can_open;
   open.disabled = state.busy || !selected?.can_open;
+  const contextKey = `${selected?.take_id || ""}/${segment?.id || ""}`;
+  if (contextKey !== visualContextKey) {
+    visualContextKey = contextKey;
+    draftReferences = [];
+    librarySelected = null;
+    $("visual-request-brief").value = "";
+    $("library-reference-note").value = "";
+    renderAttachedReferences();
+  }
+  $("visual-request-create").hidden = !segment || !selected?.take_id || selected.status === "invalid";
+  renderVisualRequests(segment, entry);
+}
+
+function renderVisualRequests(segment, entry) {
+  const list = $("visual-request-list");
+  list.replaceChildren();
+  if (!segment || !state.project?.visual_layer?.selected_take_id) {
+    list.textContent = "Select a take and segment to make a visual request.";
+    return;
+  }
+  if (!entry.requests?.length) { list.textContent = "No requests yet for this segment in this take."; return; }
+  for (const item of entry.requests) {
+    const card = document.createElement("article");
+    card.className = "visual-request-card";
+    const heading = document.createElement("h3");
+    heading.textContent = `${item.request_id} · ${item.result.status}${entry.selected_request_id === item.request_id ? " · selected" : ""}`;
+    card.append(heading);
+    const brief = document.createElement("p");
+    brief.textContent = item.brief || item.error || "Request unavailable.";
+    card.append(brief);
+    if (item.renderer) { const p = document.createElement("p"); p.textContent = `Renderer preference: ${item.renderer}`; card.append(p); }
+    for (const ref of item.references || []) {
+      const p = document.createElement("p");
+      p.textContent = `${ref.visibility} · ${ref.library} · ${ref.entry_id}${ref.note ? ` — ${ref.note}` : ""}`;
+      card.append(p);
+    }
+    for (const [label, value] of [["Implementation", item.result.implementation_path], ["Preview", item.result.preview_path], ["Segment export", item.result.export_path]]) {
+      if (value) { const p = document.createElement("p"); p.textContent = `${label}: ${value}`; card.append(p); }
+    }
+    const actions = document.createElement("div"); actions.className = "visual-plan-actions";
+    for (const [label, filename] of [["Open brief", "request.json"], ["Open result", "result.json"]]) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+      button.addEventListener("click", () => visualRequestAction("open", item.request_id, filename)); actions.append(button);
+    }
+    if (item.sfx_path) {
+      const p = document.createElement("p"); p.textContent = `SFX plan: ${item.sfx_path}`; card.append(p);
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Open SFX JSON";
+      button.addEventListener("click", () => visualRequestAction("open", item.request_id, "sfx.json")); actions.append(button);
+    } else {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Add SFX plan";
+      button.addEventListener("click", () => visualRequestAction("sfx/create", item.request_id)); actions.append(button);
+    }
+    if (item.result.status === "completed" && entry.selected_request_id !== item.request_id) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Select this candidate";
+      button.addEventListener("click", () => visualRequestAction("select", item.request_id)); actions.append(button);
+    }
+    card.append(actions); list.append(card);
+  }
+}
+
+async function visualRequestAction(action, requestId, filename) {
+  const segmentId = state.selectedId;
+  try {
+    setBusy(true);
+    const result = await request(`/api/visual-requests/${action}`, { segment_id: segmentId, request_id: requestId, ...(filename ? { filename } : {}) });
+    if (result.state) { state.project = result.state; renderProject(); }
+    toast(action === "select" ? `Selected ${requestId}.` : action === "open" ? `Opened ${filename}.` : `Created ${result.relative_path}.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
+async function createVisualRequest() {
+  const brief = $("visual-request-brief").value.trim();
+  if (!brief) return toast("Enter a visual brief for this segment.");
+  if (isDirty()) return toast("Save the narration edit before creating a visual request.");
+  try {
+    setBusy(true);
+    const result = await request("/api/visual-requests/create", {segment_id: state.selectedId, brief,
+      renderer: $("visual-request-renderer").value || null, references: draftReferences, manifest_hash: state.manifestHash});
+    state.project = result.state;
+    $("visual-request-brief").value = "";
+    draftReferences = []; renderAttachedReferences(); renderProject();
+    toast(`Created ${result.request_id} for this take and segment.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
+function renderAttachedReferences() {
+  const target = $("attached-library-entries"); target.replaceChildren();
+  for (const [index, ref] of draftReferences.entries()) {
+    const row = document.createElement("p"); row.textContent = `${ref.visibility} · ${ref.entry_id}${ref.note ? ` — ${ref.note}` : ""} `;
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remove";
+    remove.addEventListener("click", () => { draftReferences.splice(index, 1); renderAttachedReferences(); });
+    row.append(remove); target.append(row);
+  }
+}
+
+async function loadVisualLibrary() {
+  try {
+    const result = await request("/api/library/entries");
+    libraryEntries = result.entries;
+    $("library-scope").querySelector('option[value="private"]').disabled = !result.private_available;
+    renderLibraryEntries();
+  } catch (error) { $("library-entry-list").textContent = error.message; }
+}
+
+function renderLibraryEntries() {
+  const target = $("library-entry-list"); target.replaceChildren();
+  const scope = $("library-scope").value, type = $("library-type").value, query = $("library-search").value.trim().toLowerCase();
+  const matches = libraryEntries.filter((item) => (scope === "all" || item.visibility === scope)
+    && (type === "all" || item.library === type)
+    && (!query || [item.id, item.title, item.summary, item.status].some((value) => value.toLowerCase().includes(query))));
+  if (!matches.length) { target.textContent = "No matching library entries."; return; }
+  for (const item of matches.slice(0, 100)) {
+    const button = document.createElement("button"); button.type = "button";
+    button.textContent = `${item.visibility} · ${item.library_label} · ${item.title} (${item.id})`;
+    button.addEventListener("click", () => inspectLibraryEntry(item)); target.append(button);
+  }
+}
+
+async function inspectLibraryEntry(item) {
+  try {
+    const params = new URLSearchParams({visibility: item.visibility, library: item.library, id: item.id});
+    const detail = await request(`/api/library/entry?${params}`);
+    librarySelected = detail;
+    const target = $("library-entry-detail"); target.replaceChildren();
+    const heading = document.createElement("strong"); heading.textContent = `${detail.title} · ${detail.id} · ${detail.visibility}`; target.append(heading);
+    if (detail.preview) {
+      const src = detail.preview.replace(/^\/media\//, "/api/library/media/");
+      const media = ["mp4", "webm"].includes(detail.preview_type) ? document.createElement("video") : document.createElement("img");
+      media.src = src; media.alt = detail.title; media.controls = media.tagName === "VIDEO"; media.className = "library-preview"; target.append(media);
+    }
+    const notes = document.createElement("pre"); notes.textContent = detail.notes; target.append(notes);
+    $("attach-library-entry").disabled = false;
+  } catch (error) { toast(error.message); }
 }
 
 function renderAudioMapping(layerName, segment) {
@@ -221,6 +358,7 @@ function setBusy(value) {
     if (button) button.disabled = value;
   });
   document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button, #take-history-list select").forEach((item) => { item.disabled = value; });
+  document.querySelectorAll("#visual-request-create button, #visual-request-create textarea, #visual-request-create select, #visual-request-list button, #visual-request-create input").forEach((item) => { item.disabled = value; });
   updateDirtyState();
 }
 
@@ -1257,6 +1395,17 @@ function bindEvents() {
   $("visual-take-select").addEventListener("change", selectVisualTake);
   $("create-visual-take").addEventListener("click", createVisualTake);
   $("open-visual-take").addEventListener("click", openVisualTake);
+  $("create-visual-request").addEventListener("click", createVisualRequest);
+  $("visual-library-browser").addEventListener("toggle", (event) => { if (event.target.open) loadVisualLibrary(); });
+  for (const id of ["library-scope", "library-type", "library-search"]) $(id).addEventListener("input", renderLibraryEntries);
+  $("attach-library-entry").addEventListener("click", () => {
+    if (!librarySelected) return;
+    const ref = {visibility: librarySelected.visibility, library: librarySelected.library, entry_id: librarySelected.id,
+      note: $("library-reference-note").value.trim()};
+    if (draftReferences.some((item) => item.visibility === ref.visibility && item.library === ref.library && item.entry_id === ref.entry_id)) return toast("Already attached to this request.");
+    if (draftReferences.length >= 20) return toast("A request supports up to 20 references.");
+    draftReferences.push(ref); renderAttachedReferences(); $("library-reference-note").value = "";
+  });
   $("create-music-mapping").addEventListener("click", () => createAudioMapping("music"));
   $("open-music-mapping").addEventListener("click", () => openAudioMapping("music"));
   $("create-sfx-mapping").addEventListener("click", () => createAudioMapping("sfx"));

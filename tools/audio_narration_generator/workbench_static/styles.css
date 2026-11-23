@@ -58,7 +58,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .sequence-panel, .review-panel { padding: 25px 20px; background: var(--sheet); }
 .sequence-panel { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
 .layer-workspace { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; background: var(--paper); }
-.layer-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--ink); background: var(--sheet); }
+.layer-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--ink); background: var(--sheet); }
 .layer-tab { min-width: 0; min-height: 43px; padding: 8px 10px; border: 1px solid transparent; border-bottom: 3px solid transparent; background: transparent; color: #376873; font-size: 11px; font-weight: 750; line-height: 1.2; }
 .layer-tab:hover { background: #f1f2ef; color: var(--ink); }
 .layer-tab.active, .layer-tab[aria-selected="true"] { border-color: var(--ink); border-bottom-color: var(--cyan); background: var(--ink); color: white; }
@@ -360,6 +360,21 @@ audio { width: 100%; height: 34px; }
 .create-take-fields label small { display: block; margin-top: 3px; font-weight: 400; }
 .create-take-fields input, .create-take-fields textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); background: var(--sheet); font: inherit; font-size: 13px; }
 .create-take-fields textarea { resize: vertical; }
+.visual-request-workspace { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 18px; min-width: 0; }
+.take-workspace > .legacy-plan-details { grid-column: 1 / -1; }
+.visual-request-workspace h2 { margin: 0 0 8px; }
+.visual-request-card { background: var(--sheet); border: 1px solid var(--line); padding: 14px; margin: 12px 0; overflow-wrap: anywhere; }
+.visual-request-card h3 { margin: 0 0 8px; }
+.visual-request-card p { margin: 7px 0; white-space: pre-wrap; }
+.visual-request-card button, .library-entry-list button, #attached-library-entries button { cursor: pointer; }
+.library-browser { border: 1px solid var(--line); padding: 12px; background: var(--sheet); }
+.library-filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.library-filters label { flex: 1 1 150px; }
+.library-filters input, .library-filters select, .create-take-fields select { width: 100%; padding: 9px; }
+.library-entry-list { display: grid; gap: 5px; max-height: 230px; overflow: auto; margin: 12px 0; }
+.library-entry-list button { text-align: left; padding: 8px; background: var(--sheet); border: 1px solid var(--line); }
+.library-entry-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.library-preview { display: block; max-width: 100%; max-height: 220px; margin: 10px 0; }
 .create-take-fields button { justify-self: start; margin-top: 5px; }
 .legacy-plan-details { margin-top: 26px; }
 .legacy-plan-note { max-width: 680px; margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }

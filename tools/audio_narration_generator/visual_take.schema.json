@@ -39,6 +39,8 @@
             }
           ]
         },
+        "request_ids": { "type": "array", "maxItems": 500, "uniqueItems": true, "items": { "type": "string", "pattern": "^VIS-[0-9]{3,6}$" } },
+        "selected_request_id": { "type": ["string", "null"], "pattern": "^VIS-[0-9]{3,6}$" },
         "library_reference": {
           "oneOf": [
             { "type": "null" },
