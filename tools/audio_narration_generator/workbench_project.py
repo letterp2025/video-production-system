@@ -217,6 +217,7 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
                 "visual_recipes": visual_recipes,
                 "visual_layer": visual_layer,
+                "music_layer": self.project_music_layer_payload(data),
                 "tts_defaults": {key: value for key, value in data["settings"].items() if key in MAX_TTS_VALUES},
                 "pause_ms": data["settings"].get("pause_ms", 350),
                 "segments": segments,

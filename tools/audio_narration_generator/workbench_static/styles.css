@@ -53,7 +53,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .sequence-panel, .editor-panel, .review-panel, .layer-workspace, .layer-tab-panel { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .sequence-panel, .review-panel { padding: 25px 20px; background: var(--sheet); }
 .sequence-panel { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
-.layer-workspace { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; background: var(--paper); }
+.layer-workspace { min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; background: var(--paper); }
 .layer-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--ink); background: var(--sheet); }
 .layer-tab { min-width: 0; min-height: 43px; padding: 8px 10px; border: 1px solid transparent; border-bottom: 3px solid transparent; background: transparent; color: #376873; font-size: 11px; font-weight: 750; line-height: 1.2; }
 .layer-tab:hover { background: #f1f2ef; color: var(--ink); }
@@ -61,6 +61,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .layer-tab-panel { min-width: 0; background: var(--paper); }
 .layer-tab-panel[hidden] { display: none !important; }
 .layer-tab-panel:focus-visible { outline: 3px solid var(--cyan); outline-offset: -3px; }
+.shared-narration-context { min-width: 0; min-height: 45px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 6px 18px; border-bottom: 1px solid var(--line); background: #e9f1ef; }
+.shared-narration-context > div { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 12px; }
+.shared-narration-context span { color: #376873; font-size: 10px; font-weight: 750; }
+.shared-narration-context strong { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.shared-narration-context code { max-width: 48%; padding: 4px 7px; background: var(--ink); color: white; font: 700 11px/1.2 "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere; }
 .script-layer-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(285px, 330px); overflow: hidden; }
 .script-layer-panel[hidden] { display: none !important; }
 .editor-panel { min-width: 0; padding: 31px clamp(24px, 4.5vw, 66px) 44px; background: var(--paper); }
@@ -72,7 +77,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .layer-heading .section-kicker { margin: 0 0 8px; }
 .layer-heading h1, .layer-placeholder h1 { margin: 0 0 10px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", "Segoe UI", sans-serif; font-size: clamp(30px, 3.5vw, 44px); font-weight: 900; letter-spacing: -.055em; line-height: 1; }
 .layer-heading > p:last-child { max-width: 620px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
-.reserved-layer-panel { display: block; }
+.music-layer-panel { display: block; }
 .layer-placeholder { padding-top: clamp(46px, 9vh, 92px); }
 .layer-placeholder .section-kicker { margin-bottom: 10px; }
 .layer-segment-context { margin: 0; color: var(--muted); font-size: 12px; }
@@ -393,6 +398,30 @@ audio { width: 100%; height: 34px; }
 .mapping-workspace .layer-segment-context { margin-bottom: 17px; }
 .mapping-workspace .visual-plan-actions { justify-content: flex-start; }
 .mapping-workspace .button-visual { white-space: normal; }
+.music-layer-content { width: min(100%, 920px); padding-top: clamp(32px, 7vh, 68px); }
+.music-layer-content > .section-kicker { margin-bottom: 9px; }
+.music-layer-content h1 { margin-bottom: 12px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", "Segoe UI", sans-serif; font-size: clamp(32px, 4vw, 48px); font-weight: 900; letter-spacing: -.055em; line-height: 1; }
+.music-layer-intro { max-width: 660px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.music-manifest-workspace { margin-top: 31px; padding: 19px 0 0; border-top: 1px solid var(--line); }
+.music-manifest-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.music-manifest-heading > div:first-child { min-width: 0; }
+.music-manifest-heading strong { font-size: 14px; }
+.music-manifest-heading .visual-plan-status { margin: 5px 0 0; }
+.music-manifest-heading .visual-plan-actions { justify-content: flex-start; flex-wrap: wrap; }
+.music-item-list { margin-top: 15px; }
+.music-item-list:empty { display: none; }
+.music-item { padding: 16px 0; border-top: 1px solid var(--line); }
+.music-item:last-child { border-bottom: 1px solid var(--line); }
+.music-item-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+.music-item-heading h2 { margin: 0; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", "Segoe UI", sans-serif; font-size: 22px; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.music-item-heading code { flex: 0 0 auto; color: #376873; font: 700 11px/1.2 "Cascadia Code", Consolas, monospace; }
+.music-item-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.music-item-anchor { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 12px; border-left: 3px solid var(--cyan); background: var(--sheet); }
+.music-item-anchor span { color: var(--muted); font-size: 10px; font-weight: 700; }
+.music-item-anchor strong { font-size: 12px; overflow-wrap: anywhere; }
+.music-item-anchor code { color: #176a7a; font: 700 11px/1.35 "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere; }
+.music-item-asset, .music-item-notes { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+.music-layer-note { max-width: 690px; margin: 21px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 
 @media (max-width: 950px) {
   .visual-take-controls { grid-template-columns: minmax(0, 1fr); }
@@ -402,4 +431,7 @@ audio { width: 100%; height: 34px; }
   .visual-layer-content { padding-top: 22px; }
   .take-workspace { padding-top: 14px; }
   .mapping-workspace { padding-left: 12px; }
+  .shared-narration-context { align-items: flex-start; padding-right: 10px; padding-left: 10px; }
+  .music-layer-content { padding-top: 26px; }
+  .music-item-range { grid-template-columns: 1fr; }
 }

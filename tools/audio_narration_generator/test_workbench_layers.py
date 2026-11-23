@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 import workbench
 import workbench_layer_mappings
 import workbench_visual_takes
-from workbench_layer_contracts import validate_audio_mapping, validate_visual_take
+from workbench_layer_contracts import validate_audio_mapping, validate_project_music_manifest, validate_visual_take
 
 
 class LayerProjectTest(unittest.TestCase):
@@ -311,6 +311,69 @@ class LayerProjectTest(unittest.TestCase):
         self.assertEqual(result["segments"][0]["sfx_mapping"]["status"], "needs_review")
         self.assertEqual(path.read_bytes(), before)
 
+    def test_project_music_manifest_is_project_wide_and_resolves_current_segment_titles(self):
+        digest = self.project.state_payload()["manifest_hash"]
+        legacy_path = self.audio / "music" / "opening-hook.json"
+        legacy_path.parent.mkdir()
+        legacy_path.write_text("legacy file remains", encoding="utf-8")
+        legacy_before = legacy_path.read_bytes()
+        created = self.project.create_project_music_manifest(digest)
+        path = self.root / "audio" / "music" / "manifest.json"
+        self.assertEqual(created["relative_path"], "audio/music/manifest.json")
+        self.assertEqual(legacy_path.read_bytes(), legacy_before)
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {
+            "schema_version": 1, "layer": "music", "items": [],
+        })
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "layer": "music",
+            "items": [{
+                "id": "MUS-001", "title": "Opening theme", "asset_path": "assets/music/theme.wav",
+                "start_segment_id": "opening-hook", "end_segment_id": "next-beat",
+            }],
+        }), encoding="utf-8")
+        layer = self.project.state_payload()["music_layer"]
+        self.assertEqual(layer["status"], "saved")
+        self.assertEqual(layer["item_count"], 1)
+        item = layer["items"][0]
+        self.assertEqual(item["start_segment_id"], "opening-hook")
+        self.assertEqual(item["start_segment_title"], "Opening hook")
+        self.assertEqual(item["start_segment_position"], 1)
+        self.assertEqual(item["end_segment_id"], "next-beat")
+        self.assertEqual(item["end_segment_title"], "Next beat")
+        self.assertEqual(item["end_segment_position"], 2)
+        self.assertEqual(item["asset_path"], "assets/music/theme.wav")
+        self.assertNotIn(str(self.root), json.dumps(layer))
+        self.data["segments"][0]["title"] = "Retitled opening"
+        self.write_manifest()
+        refreshed_item = self.project.state_payload()["music_layer"]["items"][0]
+        self.assertEqual(refreshed_item["start_segment_id"], "opening-hook")
+        self.assertEqual(refreshed_item["start_segment_title"], "Retitled opening")
+        digest = self.project.state_payload()["manifest_hash"]
+        with self.assertRaisesRegex(workbench.WorkbenchError, "already exists"):
+            self.project.create_project_music_manifest(digest)
+
+    def test_project_music_manifest_rejects_stale_or_reverse_segment_anchors_and_unsafe_assets(self):
+        valid = {
+            "schema_version": 1, "layer": "music", "items": [{
+                "id": "MUS-001", "title": "Theme", "start_segment_id": "opening-hook", "end_segment_id": "next-beat",
+            }],
+        }
+        validate_project_music_manifest(valid, self.data["segments"], self.root)
+        for update, message in (
+            ({"start_segment_id": "removed-beat"}, "does not exist"),
+            ({"start_segment_id": "next-beat", "end_segment_id": "opening-hook"}, "ends before it starts"),
+            ({"asset_path": "../outside.wav"}, "stay inside"),
+            ({"id": "MUS-001"}, "duplicated"),
+        ):
+            candidate = json.loads(json.dumps(valid))
+            candidate["items"].append(dict(candidate["items"][0]))
+            candidate["items"][0].update(update)
+            if update == {"id": "MUS-001"}:
+                candidate["items"] = [candidate["items"][0], {**candidate["items"][0], "title": "Second"}]
+            with self.subTest(update=update), self.assertRaisesRegex(ValueError, message):
+                validate_project_music_manifest(candidate, self.data["segments"], self.root)
+
     def test_malformed_oversized_and_symlinked_mappings_are_reported_invalid(self):
         digest = self.project.state_payload()["manifest_hash"]
         self.project.create_audio_mapping("music", "opening-hook", digest)
@@ -391,6 +454,13 @@ class LayerHttpTest(unittest.TestCase):
 
     def test_layer_routes_create_select_and_open_confined_files(self):
         digest = self.project.state_payload()["manifest_hash"]
+        status, result = self.post("/api/music/manifest/create", {"manifest_hash": digest})
+        self.assertEqual(status, 201)
+        self.assertEqual(result["relative_path"], "audio/music/manifest.json")
+        with mock.patch.object(self.project, "_open_layer_file") as open_file:
+            status, _ = self.post("/api/music/manifest/open", {})
+            self.assertEqual(status, 200)
+            open_file.assert_called_once_with(self.audio / "music" / "manifest.json", "project Music manifest")
         status, result = self.post("/api/visual-takes/create", {
             "take_id": "v_layer_1", "title": "Retro", "creative_direction": "Bold retro movement.", "manifest_hash": digest,
         })
@@ -442,21 +512,26 @@ class LayerInterfaceContractTest(unittest.TestCase):
         app = (tool_dir / "workbench_static" / "app.js").read_text(encoding="utf-8")
         for element_id in (
             "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input",
-            "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping",
-            "create-sfx-mapping", "open-sfx-mapping",
+            "create-visual-take", "open-visual-take", "create-music-manifest", "open-music-manifest",
+            "music-item-list", "music-manifest-status", "shared-narration-position", "shared-narration-id",
             "visual-request-list", "create-visual-request", "library-entry-list", "attach-library-entry",
         ):
             self.assertIn(f'id="{element_id}"', html)
+        self.assertNotIn('id="create-music-mapping"', html)
+        self.assertNotIn('id="music-layer-beat"', html)
         self.assertIn('role="tablist" aria-label="Production layers"', html)
         self.assertNotIn('id="tab-soundeffects-layer"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn("@media (max-width: 720px)", css)
         self.assertIn("@media (max-width: 420px)", css)
-        self.assertIn(".take-workspace { grid-template-columns: minmax(0, 1fr);", css)
+        self.assertIn(".music-item-range { grid-template-columns: 1fr; }", css)
+        self.assertIn(".shared-narration-context", css)
         self.assertIn("[hidden] { display: none !important; }", css)
         self.assertIn("createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;", app)
         self.assertIn("if (state.busy || isDirty()) return toast(\"Save beat changes before creating a visual take.\");", app)
-        self.assertIn("if (isDirty()) return toast(\"Save beat changes before creating a layer mapping.\");", app)
+        self.assertIn("if (isDirty()) return toast(\"Save beat changes before creating the project Music manifest.\");", app)
+        self.assertIn("musicAnchor(\"Starts at the beginning of\"", app)
+        self.assertIn("musicAnchor(\"Ends at the end of\"", app)
         self.assertNotIn("eval(", app)
         self.assertNotIn("new Function(", app)
 
@@ -464,7 +539,7 @@ class LayerInterfaceContractTest(unittest.TestCase):
         tool_dir = Path(workbench.__file__).resolve().parent
         for schema_name in (
             "visual_take.schema.json", "selected_visual_take.schema.json",
-            "music_mapping.schema.json", "sfx_mapping.schema.json",
+            "music_mapping.schema.json", "music_manifest.schema.json", "sfx_mapping.schema.json",
         ):
             with self.subTest(schema=schema_name):
                 schema = json.loads((tool_dir / schema_name).read_text(encoding="utf-8"))

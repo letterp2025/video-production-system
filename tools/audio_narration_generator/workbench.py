@@ -336,6 +336,12 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path == "/api/visual-requests/open":
                     project.open_visual_request_file(self._required_string(body, "segment_id"), self._required_string(body, "request_id"), self._required_string(body, "filename"))
                     self._json(200, {"ok": True})
+                elif self.path == "/api/music/manifest/create":
+                    result = project.create_project_music_manifest(self._required_string(body, "manifest_hash"))
+                    self._json(201, result)
+                elif self.path == "/api/music/manifest/open":
+                    project.open_project_music_manifest()
+                    self._json(200, {"ok": True})
                 elif self.path in {"/api/layers/music/create", "/api/layers/sfx/create"}:
                     layer = self.path.split("/")[-2]
                     result = project.create_audio_mapping(

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-wide Music manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "layer", "items"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "layer": { "const": "music" },
+    "items": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "start_segment_id", "end_segment_id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "asset_path": { "type": ["string", "null"], "maxLength": 1000 },
+        "start_segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "end_segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "notes": { "type": "string", "maxLength": 4000 }
+      }
+    }
+  }
+}

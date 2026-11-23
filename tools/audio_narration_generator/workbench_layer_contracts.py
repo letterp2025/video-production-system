@@ -17,6 +17,7 @@ MAX_LAYER_ENTRIES = 2_000
 MAX_CUES = 500
 TAKE_ID_PATTERN = re.compile(r"v_layer_[a-z0-9][a-z0-9_-]{0,48}\Z")
 REQUEST_ID_PATTERN = re.compile(r"VIS-[0-9]{3,6}\Z")
+MUSIC_ITEM_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 RENDERERS = {"effectcraft", "manim", "gsap"}
 MAPPING_LAYERS = {"music", "sfx"}
 
@@ -191,4 +192,48 @@ def validate_audio_mapping(value: Any, expected_layer: str, expected_segment_id:
             gain = cue["gain_db"]
             if isinstance(gain, bool) or not isinstance(gain, (int, float)) or not math.isfinite(gain) or not -60 <= gain <= 12:
                 raise ValueError("Audio cue gain_db must be between -60 and 12 dB.")
+    return value
+
+
+def validate_project_music_manifest(
+    value: Any,
+    narration_segments: list[dict[str, Any]],
+    project_root: Path,
+) -> dict[str, Any]:
+    """Validate project-wide music items anchored to stable narration IDs."""
+    if not isinstance(value, dict) or set(value) != {"schema_version", "layer", "items"}:
+        raise ValueError("A project Music manifest must contain schema_version, layer, and items.")
+    if value.get("schema_version") != 1 or isinstance(value.get("schema_version"), bool):
+        raise ValueError("The project Music manifest schema version is unsupported.")
+    if value.get("layer") != "music":
+        raise ValueError("The project Music manifest layer must be 'music'.")
+    items = value.get("items")
+    if not isinstance(items, list) or len(items) > MAX_CUES:
+        raise ValueError(f"Project Music items must be a list of at most {MAX_CUES} items.")
+
+    positions = {segment["id"]: index for index, segment in enumerate(narration_segments)}
+    seen_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or not {"id", "title", "start_segment_id", "end_segment_id"}.issubset(item) or not set(item).issubset({
+            "id", "title", "start_segment_id", "end_segment_id", "asset_path", "notes",
+        }):
+            raise ValueError("Each Music item requires id, title, start_segment_id, and end_segment_id; asset_path and notes are optional.")
+        item_id = item["id"]
+        if not isinstance(item_id, str) or not MUSIC_ITEM_ID_PATTERN.fullmatch(item_id):
+            raise ValueError("Each Music item ID must use letters, numbers, underscores, or hyphens.")
+        if item_id in seen_ids:
+            raise ValueError(f"Music item ID '{item_id}' is duplicated.")
+        seen_ids.add(item_id)
+        title = item["title"]
+        if not isinstance(title, str) or not title.strip() or len(title) > MAX_TITLE_CHARS:
+            raise ValueError(f"Music item {item_id} needs a title of 1 to {MAX_TITLE_CHARS} characters.")
+        start_id, end_id = item["start_segment_id"], item["end_segment_id"]
+        if not isinstance(start_id, str) or not isinstance(end_id, str) or start_id not in positions or end_id not in positions:
+            raise ValueError(f"Music item {item_id} references a narration ID that does not exist.")
+        if positions[start_id] > positions[end_id]:
+            raise ValueError(f"Music item {item_id} ends before it starts in narration order.")
+        if "asset_path" in item and item["asset_path"] is not None:
+            project_relative_path(project_root, item["asset_path"], f"Music item {item_id} asset_path")
+        if "notes" in item and (not isinstance(item["notes"], str) or len(item["notes"]) > 4_000):
+            raise ValueError(f"Music item {item_id} notes must be text of at most 4000 characters.")
     return value

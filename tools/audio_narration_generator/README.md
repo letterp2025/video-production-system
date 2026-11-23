@@ -78,11 +78,11 @@ The local workbench is a browser interface around `narration_manifest.json` and 
 
 ### Segment layers
 
-A segment (called a **beat** in the workbench) is the stable unit that ties four production layers together: **script text and narration audio**, **visual**, **music**, and **SFX**. The manifest's segment ID and spoken order are the shared identity and sequence. A layer can be empty; adding music or SFX must not change the spoken words or regenerate a narration take.
+A segment (called a **beat** in the workbench) is the stable unit for **script text and narration audio** and for segment-specific **visuals**. The Visual Layer can keep optional SFX beside the visual request they support. Music is different: it is one project-wide list whose items start and end on stable narration segment boundaries. A shared context strip shows the selected narration title and stable ID across Script and Narration, Visual, and Music.
 
-Approved text, narration settings, and selected narration takes live in `audio/narration_manifest.json`. New visual work uses one or more whole-spine take manifests in the video project's `visual_layer/` folder, keyed by the same stable narration IDs; the selected take is recorded separately. The Visual Layer creates project JSON for each take and segment request. Older `audio/visuals/<segment-id>.json` files are left untouched but have no workflow in the current interface. Music still uses the existing per-beat JSON mapping while its project-wide design is pending. Sound effects are optional JSON files attached to individual visual requests. See the [segment layers and workbench layout task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the schemas and boundaries.
+Approved text, narration settings, and selected narration takes live in `audio/narration_manifest.json`. New visual work uses one or more whole-spine take manifests in the video project's `visual_layer/` folder, keyed by the same stable narration IDs; the selected take is recorded separately. The Visual Layer creates project JSON for each take and segment request. Older `audio/visuals/<segment-id>.json` files are left untouched but have no workflow in the current interface. Project-wide music items live in `audio/music/manifest.json`; older per-beat music JSON files remain untouched and are not shown. Sound effects are optional JSON files attached to individual visual requests. See the [segment layers and workbench layout task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the schemas and boundaries.
 
-The selected-segment workspace has three top-level tabs: **Script and Narration Layer**, **Visual Layer**, and **Music Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. Visual Layer holds visual requests and optional candidate-specific SFX JSON. The previous per-segment SFX mapping and visual-plan panels are no longer shown. Music still uses the existing per-beat mapping workflow pending the project-wide music phase. See the [segment layers task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
+The selected-segment workspace has three top-level tabs: **Script and Narration Layer**, **Visual Layer**, and **Music Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. Visual Layer holds visual requests and optional candidate-specific SFX JSON. The previous per-segment SFX mapping and visual-plan panels are no longer shown. Music is project-wide, and each item's start and end anchors display both the stable narration ID and current segment title. See the [segment layers task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
 
 ### Start it
 
@@ -149,11 +149,22 @@ The take schema is [`visual_take.schema.json`](visual_take.schema.json); the sel
 
 ### Music and sound effects
 
-The current **Music Layer** creates the existing per-segment `audio/music/<segment-id>.json` mapping. Project-wide music planning remains future work. Standalone `audio/sfx/<segment-id>.json` mappings belong to an earlier prototype and are not exposed in the current interface. Optional sound effects are attached to a visual request as `sfx.json`, keeping them beside the visual candidate they support.
+The **Music Layer** creates and opens one project-wide `audio/music/manifest.json`. Terminal Codex can add, revise, or help source its items; use **Reload manifest** in VPS to see the latest list. Each item has an item ID and title, `start_segment_id`, and `end_segment_id`. It begins at the start of the start segment and ends at the end of the end segment. Optional `asset_path` points to a project-relative asset and optional `notes` keep concise planning context. Segment titles are resolved from the current narration manifest when displayed, so the stable IDs remain the source of truth after title edits or reordering. See [`music_manifest.schema.json`](music_manifest.schema.json) for the data contract.
 
-The music mapping records `schema_version`, `layer`, `segment_id`, `source_text_sha256`, and a `cues` array. An empty array is valid. A cue requires a project-relative `asset_path` and `start_seconds` relative to the narration segment. Optional `source_offset_seconds` trims into the source asset, optional positive `duration_seconds` limits the cue, and optional `gain_db` must be between -60 and +12. The standalone music/SFX mapping schemas are [`music_mapping.schema.json`](music_mapping.schema.json) and [`sfx_mapping.schema.json`](sfx_mapping.schema.json); the latter documents the older standalone SFX format. The workbench validates path shape and rejects traversal/symlinks, but it does not verify the asset exists, source/license, or whether use is permitted. Review sources separately and keep any Asset Finder receipt with its asset.
+Example item:
 
-Changing approved words does not rewrite visual or music JSON. The workbench marks text-linked entries **Needs review** where supported. Mapping files do not trigger Asset Finder, download media, play cues, mix audio, or render video. Timing behavior for future composition, including fades, overlaps, and response to narration-length changes, remains unspecified.
+```json
+{
+  "id": "MUS-001",
+  "title": "Opening bed",
+  "asset_path": "assets/audio/music/opening-bed.wav",
+  "start_segment_id": "opening-hook",
+  "end_segment_id": "project-overview",
+  "notes": "Codex: choose a restrained, warm instrumental bed."
+}
+```
+
+An empty `items` array is valid before music is chosen. The workbench checks the manifest shape, known stable segment IDs, narration order, and project-relative asset paths; it does not verify file existence, provenance, license, or usage rights. Asset Finder can be used separately when sourcing. The manifest does not trigger downloads, playback, mixing, or rendering. Overlaps and fades remain future composition decisions. Standalone `audio/sfx/<segment-id>.json` mappings and older per-segment music mappings are legacy files, are not exposed in the current interface, and are not migrated or deleted. Optional sound effects are attached to a visual request as `sfx.json`, keeping them beside the visual candidate they support.
 
 ### Older visual plan files
 
@@ -186,7 +197,7 @@ The loopback web API is scoped to the selected project's narration and layer wor
 | Whole-spine visual takes and selection | Project-root `visual_layer/<take-id>.json` and `visual_layer/selected_take.json` | No |
 | Per-segment visual requests/results and candidate SFX | Project `visual_layer/<take-id>/segments/<segment-id>/requests/<request-id>/` | No |
 | Legacy per-beat visual plans | Project `audio/visuals/<segment-id>.json` | No |
-| Music cue mappings | Project `audio/music/<segment-id>.json` | No |
+| Project-wide Music items | Project `audio/music/manifest.json` | No |
 | Candidate sound-effects cues | Optional project `visual_layer/<take-id>/segments/<segment-id>/requests/<request-id>/sfx.json` | No |
 | Selected takes, receipts, assembly, and performance records | Project audio folders managed by the existing generator | Existing generator behavior |
 | Generic editing rules and response schema | Public tool folder in this repository | No project data |

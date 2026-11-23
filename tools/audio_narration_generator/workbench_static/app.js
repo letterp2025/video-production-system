@@ -30,15 +30,15 @@ function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
 
 function renderLayerPanels(segment) {
   const position = segment ? String(segment.position).padStart(2, "0") : null;
+  $("shared-narration-position").textContent = segment
+    ? "Beat " + position + " · " + (segment.title || segment.id)
+    : "No narration segment selected";
+  $("shared-narration-id").textContent = segment ? segment.id : "—";
   $("visual-beat-label").textContent = segment
     ? "Beat " + position + " · " + segment.id
     : "Visual for selected segment";
-  const musicContext = $("music-layer-beat");
-  if (musicContext) musicContext.textContent = segment
-    ? "Beat " + position + " · " + (segment.title || segment.id) + " (" + segment.id + ")"
-    : "No segment selected.";
   renderVisualTake(segment);
-  renderAudioMapping("music", segment);
+  renderMusicLayer();
 }
 
 function layerStatusLabel(status) {
@@ -239,22 +239,63 @@ async function inspectLibraryEntry(item) {
   } catch (error) { toast(error.message); }
 }
 
-function renderAudioMapping(layerName, segment) {
-  const isMusic = layerName === "music";
-  const key = isMusic ? "music_mapping" : "sfx_mapping";
-  const prefix = isMusic ? "music" : "sfx";
-  const mapping = segment?.[key] || { status: "none", exists: false, can_open: false, relative_path: `${layerName}/${segment?.id || "<segment-id>"}.json`, cue_count: 0 };
-  const status = $(`${prefix}-mapping-status`);
-  if (!segment) status.textContent = `Select a beat to create a ${isMusic ? "music" : "sound effects"} mapping.`;
-  else if (mapping.status === "none") status.textContent = `No mapping yet · ${mapping.relative_path}`;
-  else if (mapping.status === "saved") status.textContent = `Saved · ${mapping.cue_count} cue${mapping.cue_count === 1 ? "" : "s"} · ${mapping.relative_path}`;
-  else if (mapping.status === "needs_review") status.textContent = `Needs review · approved spoken words changed · ${mapping.relative_path}`;
-  else status.textContent = `Invalid or unavailable mapping · inspect ${mapping.relative_path}`;
-  const create = $(`create-${prefix}-mapping`);
-  const open = $(`open-${prefix}-mapping`);
-  create.disabled = state.busy || !segment || mapping.status !== "none" || isDirty();
-  open.hidden = !mapping.can_open;
-  open.disabled = state.busy || !mapping.can_open;
+function musicAnchor(label, position, title, id) {
+  const anchor = document.createElement("div");
+  anchor.className = "music-item-anchor";
+  const caption = document.createElement("span"); caption.textContent = label;
+  const segment = document.createElement("strong");
+  segment.textContent = `Beat ${String(position).padStart(2, "0")} · ${title}`;
+  const stableId = document.createElement("code"); stableId.textContent = id;
+  anchor.append(caption, segment, stableId);
+  return anchor;
+}
+
+function renderMusicLayer() {
+  const layer = state.project?.music_layer || {status: "none", relative_path: "audio/music/manifest.json", items: [], item_count: 0};
+  const status = $("music-manifest-status");
+  const list = $("music-item-list");
+  list.replaceChildren();
+  if (layer.status === "none") {
+    status.textContent = `No project Music manifest yet · ${layer.relative_path}`;
+    list.textContent = "Create the manifest, then add project-wide Music items in its JSON. Reload to see each item's segment range.";
+  } else if (layer.status === "invalid") {
+    status.textContent = `Music manifest needs attention · ${layer.error || layer.relative_path}`;
+    list.textContent = layer.can_open
+      ? "The manifest could not be displayed. Open its JSON, correct it, then reload the manifest."
+      : "VPS cannot safely open this manifest. Fix the file or path in the project folder, then reload.";
+  } else {
+    status.textContent = `${layer.item_count} project-wide Music item${layer.item_count === 1 ? "" : "s"} · ${layer.relative_path}`;
+    if (!layer.items.length) {
+      list.textContent = "No Music items yet. Add an item to the JSON manifest; the terminal Codex session can help choose the asset and segment range.";
+    }
+    for (const item of layer.items) {
+      const card = document.createElement("article"); card.className = "music-item";
+      const heading = document.createElement("div"); heading.className = "music-item-heading";
+      const title = document.createElement("h2"); title.textContent = item.title;
+      const id = document.createElement("code"); id.textContent = item.id;
+      heading.append(title, id);
+      const range = document.createElement("div"); range.className = "music-item-range";
+      range.append(
+        musicAnchor("Starts at the beginning of", item.start_segment_position, item.start_segment_title, item.start_segment_id),
+        musicAnchor("Ends at the end of", item.end_segment_position, item.end_segment_title, item.end_segment_id),
+      );
+      card.append(heading, range);
+      if (item.asset_path) {
+        const asset = document.createElement("p"); asset.className = "music-item-asset";
+        asset.textContent = "Project asset · " + item.asset_path; card.append(asset);
+      }
+      if (item.notes) {
+        const notes = document.createElement("p"); notes.className = "music-item-notes";
+        notes.textContent = item.notes; card.append(notes);
+      }
+      list.append(card);
+    }
+  }
+  const create = $("create-music-manifest");
+  const open = $("open-music-manifest");
+  create.disabled = state.busy || isDirty() || layer.status !== "none";
+  open.hidden = !layer.can_open;
+  open.disabled = state.busy || !layer.can_open;
 }
 
 function updateLayerControls() {
@@ -263,10 +304,7 @@ function updateLayerControls() {
   if (takeSelect) takeSelect.disabled = state.busy || isDirty() || !layer?.takes.length;
   const createTake = $("create-visual-take");
   if (createTake) createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;
-  const createMusic = $("create-music-mapping");
-  const openMusic = $("open-music-mapping");
-  if (createMusic) createMusic.disabled = state.busy || !currentSegment() || currentSegment()?.music_mapping?.status !== "none" || isDirty();
-  if (openMusic) openMusic.disabled = state.busy || !currentSegment()?.music_mapping?.can_open;
+  renderMusicLayer();
   const createRequest = $("create-visual-request");
   if (createRequest) createRequest.disabled = state.busy || isDirty() || !currentSegment() || !layer?.selected_take_id;
   const openTake = $("open-visual-take");
@@ -328,7 +366,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping"].forEach((id) => {
+  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-manifest", "open-music-manifest"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -1271,31 +1309,27 @@ async function openVisualTake() {
   finally { setBusy(false); }
 }
 
-async function createAudioMapping(layer) {
-  const segment = currentSegment();
-  if (!segment || state.busy) return;
-  if (isDirty()) return toast("Save beat changes before creating a layer mapping.");
+async function createMusicManifest() {
+  if (state.busy) return;
+  if (isDirty()) return toast("Save beat changes before creating the project Music manifest.");
   try {
     setBusy(true);
-    const result = await request(`/api/layers/${layer}/create`, {
-      segment_id: segment.id, manifest_hash: state.manifestHash,
-    });
+    const result = await request("/api/music/manifest/create", {manifest_hash: state.manifestHash});
     state.project = result.state;
     renderProject();
-    toast(`Created ${result.relative_path}. Add project-relative cue paths in the JSON editor when ready.`);
+    toast(`Created ${result.relative_path}. Add Music items in the JSON editor, then reload to review their ranges.`);
   } catch (error) {
     toast(error.message);
     await refreshState().catch(() => {});
   } finally { setBusy(false); }
 }
 
-async function openAudioMapping(layer) {
-  const segment = currentSegment();
-  if (!segment || state.busy) return;
+async function openMusicManifest() {
+  if (state.busy) return;
   try {
     setBusy(true);
-    await request(`/api/layers/${layer}/open`, { segment_id: segment.id });
-    toast(`Opened ${layer}/${segment.id}.json in the default app.`);
+    await request("/api/music/manifest/open", {});
+    toast("Opened audio/music/manifest.json in the default app.");
   } catch (error) { toast(error.message); }
   finally { setBusy(false); }
 }
@@ -1342,8 +1376,8 @@ function bindEvents() {
     if (draftReferences.length >= 20) return toast("A request supports up to 20 references.");
     draftReferences.push(ref); renderAttachedReferences(); $("library-reference-note").value = "";
   });
-  $("create-music-mapping").addEventListener("click", () => createAudioMapping("music"));
-  $("open-music-mapping").addEventListener("click", () => openAudioMapping("music"));
+  $("create-music-manifest").addEventListener("click", createMusicManifest);
+  $("open-music-manifest").addEventListener("click", openMusicManifest);
   $("show-other-takes").addEventListener("click", () => {
     state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
     const segment = currentSegment();

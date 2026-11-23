@@ -69,6 +69,10 @@
         <button id="tab-visual-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-visual-layer" tabindex="-1">Visual Layer</button>
         <button id="tab-music-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-music-layer" tabindex="-1">Music Layer</button>
       </div>
+      <div class="shared-narration-context" role="group" aria-label="Shared narration context">
+        <div><span>Shared narration context</span><strong id="shared-narration-position">No narration segment selected</strong></div>
+        <code id="shared-narration-id">—</code>
+      </div>
 
       <section id="panel-script-layer" class="layer-tab-panel script-layer-panel" role="tabpanel" aria-labelledby="tab-script-layer" tabindex="0">
         <section class="editor-panel" aria-label="Selected narration segment">
@@ -250,19 +254,24 @@
         </div>
       </section>
 
-      <section id="panel-music-layer" class="layer-tab-panel reserved-layer-panel" role="tabpanel" aria-labelledby="tab-music-layer" tabindex="0" hidden>
-        <div class="layer-content layer-placeholder">
+      <section id="panel-music-layer" class="layer-tab-panel music-layer-panel" role="tabpanel" aria-labelledby="tab-music-layer" tabindex="0" hidden>
+        <div class="layer-content music-layer-content">
           <p class="section-kicker">MUSIC LAYER</p>
-          <h1>Music for this beat</h1>
-          <p id="music-layer-beat" class="layer-segment-context">Select a beat to see its music workspace.</p>
-          <div class="mapping-workspace">
-            <p id="music-mapping-status" class="visual-plan-status" role="status" aria-live="polite">No music mapping yet.</p>
-            <p id="music-mapping-detail" class="layer-segment-context">A JSON list of project-local cue references. No audio is downloaded, played, mixed, or rendered.</p>
-            <div class="visual-plan-actions"><button id="create-music-mapping" class="button button-visual" type="button">Create music JSON</button><button id="open-music-mapping" class="text-button" type="button" hidden>Open JSON</button></div>
-          </div>
-          <div class="layer-placeholder-note">
-            <span class="placeholder-rule" aria-hidden="true"></span>
-            <div><strong>Find assets separately</strong><p>Use Asset Finder when ready to locate and review audio assets. The mapping only points to project files.</p></div>
+          <h1>Music across the narration</h1>
+          <p class="music-layer-intro">Each Music item spans the project spine: it begins at the start of one segment and ends at the end of another.</p>
+          <div class="music-manifest-workspace">
+            <div class="music-manifest-heading">
+              <div>
+                <strong>Project Music manifest</strong>
+                <p id="music-manifest-status" class="visual-plan-status" role="status" aria-live="polite">No project Music manifest yet.</p>
+              </div>
+              <div class="visual-plan-actions">
+                <button id="create-music-manifest" class="button button-visual" type="button">Create music JSON</button>
+                <button id="open-music-manifest" class="button button-outline" type="button" hidden>Open music JSON</button>
+              </div>
+            </div>
+            <div id="music-item-list" class="music-item-list"></div>
+            <p class="music-layer-note">The manifest is data only. Terminal Codex can help choose assets and update its JSON; VPS shows the chosen asset and segment range after reload. VPS does not find, download, play, mix, or render music.</p>
           </div>
         </div>
       </section>
