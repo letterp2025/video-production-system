@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, visualRecipeSelections: {}, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 let libraryEntries = [];
 let librarySelected = null;
@@ -28,65 +28,24 @@ function escapeText(value) { return String(value ?? ""); }
 function currentSegment() { return state.project?.segments.find((item) => item.id === state.selectedId); }
 function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
 
-function renderVisualPlanner(segment) {
-  const select = $("visual-recipe");
-  select.replaceChildren();
-  const custom = document.createElement("option");
-  custom.value = "";
-  custom.textContent = "Custom plan (no library recipe)";
-  select.append(custom);
-  for (const recipe of state.project?.visual_recipes || []) {
-    const option = document.createElement("option");
-    option.value = recipe.id;
-    option.textContent = `${recipe.title} · ${recipe.id}`;
-    select.append(option);
-  }
-  const plan = segment?.visual_plan || { status: "none", relative_path: "", exists: false, can_open: false };
-  if (plan.recipe_id && ![...select.options].some((option) => option.value === plan.recipe_id)) {
-    const unavailable = document.createElement("option");
-    unavailable.value = plan.recipe_id;
-    unavailable.textContent = `Unavailable recipe · ${plan.recipe_id}`;
-    select.append(unavailable);
-  }
-  select.value = plan.exists
-    ? plan.recipe_id || ""
-    : state.visualRecipeSelections[segment?.id] || "";
+function renderLayerPanels(segment) {
+  const position = segment ? String(segment.position).padStart(2, "0") : null;
   $("visual-beat-label").textContent = segment
-    ? `Visual for beat ${String(segment.position).padStart(2, "0")} · ${segment.id}`
-    : "Visual for selected beat";
-  const beatContext = segment
-    ? "Beat " + String(segment.position).padStart(2, "0") + " · " + (segment.title || segment.id) + " (" + segment.id + ")"
-    : "No beat selected.";
+    ? "Beat " + position + " · " + segment.id
+    : "Visual for selected segment";
   const musicContext = $("music-layer-beat");
-  if (musicContext) musicContext.textContent = beatContext;
+  if (musicContext) musicContext.textContent = segment
+    ? "Beat " + position + " · " + (segment.title || segment.id) + " (" + segment.id + ")"
+    : "No segment selected.";
   renderVisualTake(segment);
   renderAudioMapping("music", segment);
-  renderAudioMapping("sfx", segment);
-  updateVisualPlanControls(segment, plan);
-}
-
-function updateVisualPlanControls(segment = currentSegment(), plan = segment?.visual_plan || { status: "none", relative_path: "", exists: false, can_open: false }) {
-  const selectable = Boolean(segment) && plan.status === "none";
-  $("visual-recipe").disabled = state.busy || !selectable;
-  $("create-visual-plan").disabled = state.busy || !selectable || isDirty() || isNoteDirty();
-  $("open-visual-plan").hidden = !plan.can_open;
-  $("open-visual-plan").disabled = state.busy || !plan.can_open;
-  const status = $("visual-plan-status");
-  if (!segment) status.textContent = "Select a beat to plan its visual.";
-  else if (plan.status === "saved") status.textContent = `Plan saved · ${plan.recipe_title || "Custom visual plan"} · ${plan.relative_path}`;
-  else if (plan.status === "needs_review") status.textContent = `Needs review · spoken words changed · ${plan.relative_path}`;
-  else if (plan.status === "invalid") status.textContent = plan.can_open
-    ? `Plan unavailable or invalid · inspect ${plan.relative_path}`
-    : "Plan unavailable or invalid · check the audio/visuals folder";
-  else if (isDirty() || isNoteDirty()) status.textContent = "Save beat and note changes before creating a visual plan.";
-  else status.textContent = `No plan yet · ${plan.relative_path}`;
 }
 
 function layerStatusLabel(status) {
   return ({
-    none: "Not created", complete: "Complete across active narration beats", in_progress: "In progress",
-    saved: "Saved", pending: "Pending visual work", missing: "Implementation files missing",
-    needs_review: "Needs review after spoken-text changes", invalid: "Invalid or unavailable JSON",
+    none: "Not started", complete: "Ready", in_progress: "In progress",
+    saved: "Files ready", pending: "Not started", missing: "Files missing",
+    needs_review: "Review needed", invalid: "Invalid JSON",
   })[status] || status;
 }
 
@@ -101,28 +60,24 @@ function renderVisualTake(segment) {
   for (const take of layer.takes) {
     const option = document.createElement("option");
     option.value = take.take_id;
-    option.textContent = `${take.title || take.take_id} · ${take.take_id} · ${layerStatusLabel(take.status)}`;
+    option.textContent = (take.title || take.take_id) + " · " + take.take_id;
     select.append(option);
   }
   select.value = layer.selected_take_id || "";
   const selected = layer.selected_take;
-  $("visual-take-title").textContent = selected?.title || "No visual take selected";
-  $("visual-take-direction").textContent = selected?.creative_direction || "Create a take to start a visual treatment for the narration spine.";
+  $("visual-take-title").textContent = selected?.title || "No take yet";
+  $("visual-take-direction").textContent = selected?.creative_direction || "Create one direction for the whole video, then add requests for individual segments.";
   const takeStatus = $("visual-take-status");
-  if (!selected) takeStatus.textContent = layer.selection_status === "invalid" ? "Selected take pointer is invalid. Choose a valid take or repair the JSON." : "No whole-spine visual take is selected.";
-  else if (selected.status === "complete") takeStatus.textContent = `Complete · ${selected.complete_active_segment_count}/${selected.active_segment_count} active beats · visual_layer/${selected.filename}`;
+  if (!selected) takeStatus.textContent = layer.selection_status === "invalid" ? "The selected take could not be read. Choose another take or repair its JSON." : "";
+  else if (selected.status === "complete") takeStatus.textContent = "Ready on " + selected.complete_active_segment_count + " of " + selected.active_segment_count + " active segments · visual_layer/" + selected.filename;
   else if (selected.status === "in_progress") {
-    const missing = selected.missing_active_segment_ids || [];
-    takeStatus.textContent = `In progress · ${selected.complete_active_segment_count || 0}/${selected.active_segment_count} active beats ready${missing.length ? ` · unmapped: ${missing.join(", ")}` : ""} · visual_layer/${selected.filename}`;
-  } else takeStatus.textContent = `${layerStatusLabel(selected.status)} · visual_layer/${selected.filename}${selected.error ? ` · ${selected.error}` : ""}`;
+    takeStatus.textContent = (selected.complete_active_segment_count || 0) + " of " + selected.active_segment_count + " active segments ready · visual_layer/" + selected.filename;
+  } else takeStatus.textContent = layerStatusLabel(selected.status) + " · visual_layer/" + selected.filename + (selected.error ? " · " + selected.error : "");
   const entry = segment?.visual_take_segment || { status: "none" };
+  $("visual-entry-heading").textContent = segment ? (segment.title || segment.id) : "Choose a segment";
   $("visual-entry-status").textContent = segment
-    ? `${segment.title || segment.id} · ${segment.id} · ${layerStatusLabel(entry.status)}`
-    : "Select a beat to inspect its visual mapping.";
-  $("visual-entry-intent").textContent = entry.visual_intent || (entry.status === "pending" ? "No visual intent has been added for this beat in the selected take." : "");
-  $("visual-entry-renderer").textContent = entry.renderer || "—";
-  $("visual-entry-folder").textContent = entry.implementation?.folder || "—";
-  $("visual-entry-file").textContent = entry.implementation?.entry_file || "—";
+    ? "Stable ID: " + segment.id + " · " + layerStatusLabel(entry.status)
+    : "Select a segment from the list.";
   const open = $("open-visual-take");
   open.hidden = !selected?.can_open;
   open.disabled = state.busy || !selected?.can_open;
@@ -133,6 +88,8 @@ function renderVisualTake(segment) {
     librarySelected = null;
     $("visual-request-brief").value = "";
     $("library-reference-note").value = "";
+    $("visual-request-create").open = false;
+    $("visual-library-browser").open = false;
     renderAttachedReferences();
   }
   $("visual-request-create").hidden = !segment || !selected?.take_id || selected.status === "invalid";
@@ -142,47 +99,65 @@ function renderVisualTake(segment) {
 function renderVisualRequests(segment, entry) {
   const list = $("visual-request-list");
   list.replaceChildren();
-  if (!segment || !state.project?.visual_layer?.selected_take_id) {
-    list.textContent = "Select a take and segment to make a visual request.";
+  if (!segment) {
+    list.textContent = "Select a segment to see its requests.";
     return;
   }
-  if (!entry.requests?.length) { list.textContent = "No requests yet for this segment in this take."; return; }
+  if (!state.project?.visual_layer?.selected_take_id) {
+    list.textContent = "Create or select a visual take first.";
+    return;
+  }
+  if (!entry.requests?.length) {
+    list.textContent = "No visual requests for this segment yet. Add one below; it will be saved as project JSON.";
+    return;
+  }
   for (const item of entry.requests) {
-    const card = document.createElement("article");
+    const card = document.createElement("details");
     card.className = "visual-request-card";
-    const heading = document.createElement("h3");
-    heading.textContent = `${item.request_id} · ${item.result.status}${entry.selected_request_id === item.request_id ? " · selected" : ""}`;
+    if (entry.selected_request_id === item.request_id) card.classList.add("is-selected");
+    const heading = document.createElement("summary");
+    heading.className = "visual-request-summary";
+    const id = document.createElement("strong"); id.textContent = item.request_id;
+    const status = document.createElement("span"); status.className = "request-status"; status.textContent = (item.result.status || "requested").replaceAll("_", " ");
+    heading.append(id, status);
+    if (entry.selected_request_id === item.request_id) {
+      const selectedLabel = document.createElement("span"); selectedLabel.className = "request-selected-label"; selectedLabel.textContent = "Selected"; heading.append(selectedLabel);
+    }
     card.append(heading);
+    const content = document.createElement("div"); content.className = "visual-request-details";
     const brief = document.createElement("p");
     brief.textContent = item.brief || item.error || "Request unavailable.";
-    card.append(brief);
-    if (item.renderer) { const p = document.createElement("p"); p.textContent = `Renderer preference: ${item.renderer}`; card.append(p); }
+    content.append(brief);
+    if (item.renderer) { const p = document.createElement("p"); p.textContent = "Renderer: " + item.renderer; content.append(p); }
     for (const ref of item.references || []) {
       const p = document.createElement("p");
-      p.textContent = `${ref.visibility} · ${ref.library} · ${ref.entry_id}${ref.note ? ` — ${ref.note}` : ""}`;
-      card.append(p);
+      p.textContent = ref.visibility + " · " + ref.library + " · " + ref.entry_id + (ref.note ? " — " + ref.note : "");
+      content.append(p);
     }
     for (const [label, value] of [["Implementation", item.result.implementation_path], ["Preview", item.result.preview_path], ["Segment export", item.result.export_path]]) {
-      if (value) { const p = document.createElement("p"); p.textContent = `${label}: ${value}`; card.append(p); }
+      if (value) { const p = document.createElement("p"); p.textContent = label + ": " + value; content.append(p); }
     }
     const actions = document.createElement("div"); actions.className = "visual-plan-actions";
-    for (const [label, filename] of [["Open brief", "request.json"], ["Open result", "result.json"]]) {
+    for (const [label, filename] of [["Open request JSON", "request.json"], ["Open result JSON", "result.json"]]) {
       const button = document.createElement("button"); button.type = "button"; button.textContent = label;
       button.addEventListener("click", () => visualRequestAction("open", item.request_id, filename)); actions.append(button);
     }
+    const sfx = document.createElement("details"); sfx.className = "visual-sfx-details";
+    const sfxSummary = document.createElement("summary"); sfxSummary.textContent = item.sfx_path ? "Sound effects JSON · saved" : "Sound effects JSON · optional"; sfx.append(sfxSummary);
     if (item.sfx_path) {
-      const p = document.createElement("p"); p.textContent = `SFX plan: ${item.sfx_path}`; card.append(p);
-      const button = document.createElement("button"); button.type = "button"; button.textContent = "Open SFX JSON";
-      button.addEventListener("click", () => visualRequestAction("open", item.request_id, "sfx.json")); actions.append(button);
+      const p = document.createElement("p"); p.textContent = item.sfx_path; sfx.append(p);
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Open sound effects JSON";
+      button.addEventListener("click", () => visualRequestAction("open", item.request_id, "sfx.json")); sfx.append(button);
     } else {
-      const button = document.createElement("button"); button.type = "button"; button.textContent = "Add SFX plan";
-      button.addEventListener("click", () => visualRequestAction("sfx/create", item.request_id)); actions.append(button);
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Create sound effects JSON";
+      button.addEventListener("click", () => visualRequestAction("sfx/create", item.request_id)); sfx.append(button);
     }
+    content.append(sfx);
     if (item.result.status === "completed" && entry.selected_request_id !== item.request_id) {
-      const button = document.createElement("button"); button.type = "button"; button.textContent = "Select this candidate";
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Use this visual";
       button.addEventListener("click", () => visualRequestAction("select", item.request_id)); actions.append(button);
     }
-    card.append(actions); list.append(card);
+    content.append(actions); card.append(content); list.append(card);
   }
 }
 
@@ -192,7 +167,7 @@ async function visualRequestAction(action, requestId, filename) {
     setBusy(true);
     const result = await request(`/api/visual-requests/${action}`, { segment_id: segmentId, request_id: requestId, ...(filename ? { filename } : {}) });
     if (result.state) { state.project = result.state; renderProject(); }
-    toast(action === "select" ? `Selected ${requestId}.` : action === "open" ? `Opened ${filename}.` : `Created ${result.relative_path}.`);
+    toast(action === "select" ? "Selected " + requestId + " for this segment." : action === "open" ? "Opened " + filename + "." : "Created " + result.relative_path + ".");
   } catch (error) { toast(error.message); }
   finally { setBusy(false); }
 }
@@ -207,6 +182,7 @@ async function createVisualRequest() {
       renderer: $("visual-request-renderer").value || null, references: draftReferences, manifest_hash: state.manifestHash});
     state.project = result.state;
     $("visual-request-brief").value = "";
+    $("visual-request-create").open = false;
     draftReferences = []; renderAttachedReferences(); renderProject();
     toast(`Created ${result.request_id} for this take and segment.`);
   } catch (error) { toast(error.message); }
@@ -287,13 +263,12 @@ function updateLayerControls() {
   if (takeSelect) takeSelect.disabled = state.busy || isDirty() || !layer?.takes.length;
   const createTake = $("create-visual-take");
   if (createTake) createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;
-  for (const prefix of ["music", "sfx"]) {
-    const create = $(`create-${prefix}-mapping`);
-    const open = $(`open-${prefix}-mapping`);
-    const mappingKey = prefix === "music" ? "music_mapping" : "sfx_mapping";
-    if (create) create.disabled = state.busy || !currentSegment() || currentSegment()?.[mappingKey]?.status !== "none" || isDirty();
-    if (open) open.disabled = state.busy || !currentSegment()?.[mappingKey]?.can_open;
-  }
+  const createMusic = $("create-music-mapping");
+  const openMusic = $("open-music-mapping");
+  if (createMusic) createMusic.disabled = state.busy || !currentSegment() || currentSegment()?.music_mapping?.status !== "none" || isDirty();
+  if (openMusic) openMusic.disabled = state.busy || !currentSegment()?.music_mapping?.can_open;
+  const createRequest = $("create-visual-request");
+  if (createRequest) createRequest.disabled = state.busy || isDirty() || !currentSegment() || !layer?.selected_take_id;
   const openTake = $("open-visual-take");
   if (openTake) openTake.disabled = state.busy || !layer?.selected_take?.can_open;
 }
@@ -353,7 +328,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-recipe", "create-visual-plan", "open-visual-plan", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping", "create-sfx-mapping", "open-sfx-mapping"].forEach((id) => {
+  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-mapping", "open-music-mapping"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
@@ -391,7 +366,6 @@ function updateDirtyState() {
   $("move-beat-up").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, -1);
   $("move-beat-down").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, 1);
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
-  updateVisualPlanControls();
   updateLayerControls();
 }
 
@@ -712,7 +686,7 @@ function renderEditor() {
   const segment = currentSegment();
   const editor = $("editor");
   const empty = $("empty-state");
-  renderVisualPlanner(segment);
+  renderLayerPanels(segment);
   if (!segment) {
     editor.hidden = true;
     empty.hidden = false;
@@ -761,7 +735,7 @@ function followPlaybackBeat(segmentId) {
   renderTakes(segment);
   renderSuggestions(segment);
   renderContext(segment);
-  renderVisualPlanner(segment);
+  renderLayerPanels(segment);
   state.baseline = snapshotKey(snapshot());
   updateDirtyState();
 }
@@ -1246,39 +1220,6 @@ async function runGeneration(assemble) {
   finally { setBusy(false); updateDirtyState(); }
 }
 
-async function createVisualPlan() {
-  const segment = currentSegment();
-  if (!segment || state.busy) return;
-  if (isDirty() || isNoteDirty()) return toast("Save beat and note changes before creating a visual plan.");
-  const recipeId = $("visual-recipe").value || null;
-  try {
-    setBusy(true);
-    const result = await request("/api/visuals/create", {
-      segment_id: segment.id, recipe_id: recipeId, manifest_hash: state.manifestHash,
-    });
-    state.project = result.state;
-    state.manifestHash = result.state.manifest_hash;
-    renderProject();
-    toast(`Created ${result.relative_path} for ${segment.id}. This is a plan only; nothing was rendered.`);
-  } catch (error) {
-    toast(error.message);
-    await refreshState().catch(() => {});
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function openVisualPlan() {
-  const segment = currentSegment();
-  if (!segment || state.busy) return;
-  try {
-    setBusy(true);
-    await request("/api/visuals/open", { segment_id: segment.id });
-    toast(`Opened the visual plan for ${segment.id} in the default app.`);
-  } catch (error) { toast(error.message); }
-  finally { setBusy(false); }
-}
-
 async function selectVisualTake() {
   const takeId = $("visual-take-select").value;
   if (!takeId) return refreshState();
@@ -1310,6 +1251,7 @@ async function createVisualTake() {
     $("visual-take-id").value = "";
     $("visual-take-title-input").value = "";
     $("visual-take-direction-input").value = "";
+    $("visual-take-create").open = false;
     renderProject();
     toast(`Created and selected ${takeId}. Its JSON has a pending entry for every narration beat.`);
   } catch (error) {
@@ -1386,12 +1328,6 @@ async function clearResolved() {
 }
 
 function bindEvents() {
-  $("visual-recipe").addEventListener("change", (event) => {
-    if (state.selectedId) state.visualRecipeSelections[state.selectedId] = event.target.value;
-    updateVisualPlanControls();
-  });
-  $("create-visual-plan").addEventListener("click", createVisualPlan);
-  $("open-visual-plan").addEventListener("click", openVisualPlan);
   $("visual-take-select").addEventListener("change", selectVisualTake);
   $("create-visual-take").addEventListener("click", createVisualTake);
   $("open-visual-take").addEventListener("click", openVisualTake);
@@ -1408,8 +1344,6 @@ function bindEvents() {
   });
   $("create-music-mapping").addEventListener("click", () => createAudioMapping("music"));
   $("open-music-mapping").addEventListener("click", () => openAudioMapping("music"));
-  $("create-sfx-mapping").addEventListener("click", () => createAudioMapping("sfx"));
-  $("open-sfx-mapping").addEventListener("click", () => openAudioMapping("sfx"));
   $("show-other-takes").addEventListener("click", () => {
     state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
     const segment = currentSegment();

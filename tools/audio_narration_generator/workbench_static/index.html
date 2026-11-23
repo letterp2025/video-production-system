@@ -173,100 +173,80 @@
       </section>
 
       <section id="panel-visual-layer" class="layer-tab-panel visual-layer-panel" role="tabpanel" aria-labelledby="tab-visual-layer" tabindex="0" hidden>
-        <div class="layer-content">
-          <div class="layer-heading">
-            <div class="position-label"><span id="visual-beat-label">Visual for selected beat</span><span class="rule"></span></div>
+        <div class="layer-content visual-layer-content">
+          <div class="layer-heading visual-heading">
+            <div class="position-label"><span id="visual-beat-label">Visual for selected segment</span><span class="rule"></span></div>
             <p class="section-kicker">VISUAL LAYER</p>
-            <h1>Visual takes across the video</h1>
-            <p>Each take maps the narration spine to project-owned visual work. Select a take to see this beat's intent and implementation; the workbench stores and validates JSON but never runs renderer code.</p>
+            <h1>Visuals for this segment</h1>
+            <p>Choose a take for the whole video, select a segment on the left, then add a visual request. Codex in your terminal reads the request JSON.</p>
           </div>
           <div class="take-workspace">
-            <label class="visual-recipe-field" for="visual-take-select">
-              <span>Selected whole-video take</span>
-              <select id="visual-take-select" aria-describedby="visual-take-status"><option value="">No visual take selected</option></select>
-            </label>
-            <div class="visual-plan-actions"><button id="open-visual-take" class="button button-outline" type="button" hidden>Open take JSON</button></div>
-            <div id="visual-take-summary" class="layer-file-summary" aria-live="polite">
-              <strong id="visual-take-title">No visual take yet</strong>
-              <p id="visual-take-direction">Create a take to start a visual treatment for the narration spine.</p>
-              <span id="visual-take-status" class="visual-plan-status" role="status"></span>
+            <div class="visual-take-controls">
+              <label class="visual-take-field" for="visual-take-select">
+                <span>Take · applies across the narration spine</span>
+                <select id="visual-take-select" aria-describedby="visual-take-status"><option value="">No visual take selected</option></select>
+              </label>
+              <div class="visual-take-actions">
+                <button id="open-visual-take" class="button button-outline" type="button" hidden>Open take JSON</button>
+              </div>
             </div>
+            <div id="visual-take-summary" class="visual-take-summary" aria-live="polite">
+              <strong id="visual-take-title">No visual take yet</strong>
+              <span id="visual-take-status" class="visual-plan-status" role="status"></span>
+              <p id="visual-take-direction">Create a take to define the visual direction across the video.</p>
+            </div>
+            <details id="visual-take-create" class="create-take-details">
+              <summary class="button button-outline">Create a visual take</summary>
+              <div class="create-take-fields">
+                <label for="visual-take-id">Take ID <small>For example, v_layer_1 or v_layer_2.</small></label>
+                <input id="visual-take-id" maxlength="57" placeholder="v_layer_1" autocomplete="off">
+                <label for="visual-take-title-input">Take name</label>
+                <input id="visual-take-title-input" maxlength="160" placeholder="Retro direction" autocomplete="off">
+                <label for="visual-take-direction-input">Direction across the video</label>
+                <textarea id="visual-take-direction-input" maxlength="24000" rows="3" placeholder="Describe the visual treatment for this version of the video."></textarea>
+                <button id="create-visual-take" class="button button-visual" type="button">Create take JSON</button>
+              </div>
+            </details>
             <section class="selected-layer-entry" aria-labelledby="visual-entry-heading">
-              <p class="section-kicker">SELECTED BEAT</p>
-              <h2 id="visual-entry-heading">Visual intent</h2>
-              <p id="visual-entry-status" class="layer-segment-context">Select a beat to inspect its visual mapping.</p>
-              <p id="visual-entry-intent" class="layer-entry-intent"></p>
-              <dl class="layer-entry-details">
-                <div><dt>Renderer</dt><dd id="visual-entry-renderer">—</dd></div>
-                <div><dt>Implementation folder</dt><dd id="visual-entry-folder">—</dd></div>
-                <div><dt>Entry file</dt><dd id="visual-entry-file">—</dd></div>
-              </dl>
+              <p class="section-kicker">SELECTED SEGMENT</p>
+              <h2 id="visual-entry-heading">Choose a segment</h2>
+              <p id="visual-entry-status" class="layer-segment-context">Select a segment from the list.</p>
             </section>
             <section class="visual-request-workspace" aria-labelledby="visual-requests-heading">
-              <h2 id="visual-requests-heading">Visual requests for this segment</h2>
-              <p>Each request keeps its own brief, result, and optional sound effects. Select a completed candidate for this take.</p>
+              <div class="visual-request-heading">
+                <div>
+                  <h2 id="visual-requests-heading">Requests for this segment</h2>
+                  <p>Each request has its own JSON. After terminal Codex updates result.json, choose <strong>Reload manifest</strong> below to refresh this list.</p>
+                </div>
+              </div>
               <div id="visual-request-list" class="visual-request-list" aria-live="polite"></div>
-              <details id="visual-request-create" class="create-take-details">
-                <summary>Create another visual request</summary>
+              <details id="visual-request-create" class="visual-request-create">
+                <summary class="button button-visual">Add visual request</summary>
                 <div class="create-take-fields">
-                  <label for="visual-request-brief">Brief for the animation</label>
-                  <textarea id="visual-request-brief" rows="5" maxlength="24000" placeholder="Describe the element, motion, style, and segment export you want."></textarea>
-                  <label for="visual-request-renderer">Renderer preference</label>
-                  <select id="visual-request-renderer"><option value="">Let Codex choose</option><option value="effectcraft">EffectCraft</option><option value="manim">Manim</option><option value="gsap">GSAP</option></select>
+                  <label for="visual-request-brief">What should we see in this segment?</label>
+                  <textarea id="visual-request-brief" rows="4" maxlength="24000" placeholder="Describe the visual style, elements, and motion. Example: a retro text-only reveal."></textarea>
+                  <label for="visual-request-renderer">Renderer preference <small>Optional. Leave on “Codex chooses” to decide per request.</small></label>
+                  <select id="visual-request-renderer"><option value="">Codex chooses</option><option value="effectcraft">EffectCraft</option><option value="manim">Manim</option><option value="gsap">GSAP</option></select>
                   <details id="visual-library-browser" class="library-browser">
-                    <summary>Browse Visual Library (optional)</summary>
-                    <p>The library stays read-only. References and notes are copied into this request as catalog IDs only.</p>
+                    <summary>Use a Visual Library reference (optional)</summary>
+                    <p>References are saved as catalog IDs and notes in this request. Library files stay unchanged.</p>
                     <div class="library-filters">
                       <label>Scope <select id="library-scope"><option value="all">Everything</option><option value="public">Public</option><option value="private">Private</option></select></label>
                       <label>Type <select id="library-type"><option value="all">Everything</option><option value="visual_reference_library">References</option><option value="visual_elements_library">Elements</option><option value="visual_animations_library">Animations</option></select></label>
                       <label>Search <input id="library-search" type="search" placeholder="Search library"></label>
                     </div>
                     <div id="library-entry-list" class="library-entry-list"></div>
-                    <div id="library-entry-detail" class="library-entry-detail" aria-live="polite">Select an entry to inspect its notes and preview.</div>
-                    <label for="library-reference-note">How should this entry inform the request?</label>
+                    <div id="library-entry-detail" class="library-entry-detail" aria-live="polite">Choose an entry to see its notes and preview.</div>
+                    <label for="library-reference-note">How should it guide this request?</label>
                     <textarea id="library-reference-note" rows="2" maxlength="4000"></textarea>
                     <button id="attach-library-entry" type="button" class="button button-outline" disabled>Attach reference</button>
                     <div id="attached-library-entries" aria-live="polite"></div>
                   </details>
-                  <button id="create-visual-request" type="button" class="button button-visual">Create request</button>
+                  <button id="create-visual-request" type="button" class="button button-visual">Create request JSON</button>
                 </div>
               </details>
             </section>
-            <details class="legacy-plan-details"><summary>Legacy per-segment SFX mapping</summary>
-              <p id="sfx-mapping-status" role="status"></p><p id="sfx-mapping-detail">Existing audio/sfx mappings remain available.</p>
-              <button id="create-sfx-mapping" type="button">Create legacy SFX JSON</button>
-              <button id="open-sfx-mapping" type="button" hidden>Open legacy SFX JSON</button>
-            </details>
-            <details class="create-take-details">
-              <summary>Create a new visual take</summary>
-              <div class="create-take-fields">
-                <label for="visual-take-id">Take ID <small>Use a distinct ID such as v_layer_2.</small></label>
-                <input id="visual-take-id" maxlength="57" placeholder="v_layer_2" autocomplete="off">
-                <label for="visual-take-title-input">Take title</label>
-                <input id="visual-take-title-input" maxlength="160" placeholder="Alternate visual direction" autocomplete="off">
-                <label for="visual-take-direction-input">Whole-video creative direction</label>
-                <textarea id="visual-take-direction-input" maxlength="24000" rows="3" placeholder="Describe the visual treatment across the narration spine."></textarea>
-                <button id="create-visual-take" class="button button-visual" type="button">Create and select take</button>
-              </div>
-            </details>
           </div>
-          <details class="legacy-plan-details">
-            <summary>Legacy per-beat visual plan</summary>
-            <p class="legacy-plan-note">This older audio/visuals file is preserved for compatibility. New whole-video treatments belong in visual_layer takes.</p>
-          <div class="visual-plan-form">
-            <label class="visual-recipe-field" for="visual-recipe">
-              <span>Animation recipe</span>
-              <select id="visual-recipe" disabled>
-                <option value="">Custom plan (no library recipe)</option>
-              </select>
-            </label>
-            <div class="visual-plan-actions">
-              <button id="create-visual-plan" class="button button-visual" type="button" disabled>Create visual JSON</button>
-              <button id="open-visual-plan" class="text-button" type="button" hidden>Open JSON</button>
-            </div>
-            <span id="visual-plan-status" class="visual-plan-status" role="status" aria-live="polite">Loading plan status…</span>
-          </div>
-          </details>
         </div>
       </section>
 
