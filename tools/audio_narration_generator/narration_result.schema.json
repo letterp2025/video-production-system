@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VPS narration edit result",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request_id": { "type": "string", "pattern": "^SCR-[0-9]{3,6}$" },
+    "segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+    "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "status": { "enum": ["requested", "in_progress", "completed", "failed"] },
+    "proposed_text": { "type": "string" },
+    "rationale": { "type": "string" },
+    "provider": { "type": ["string", "null"] },
+    "completed_at": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] }
+  },
+  "required": ["schema_version", "request_id", "segment_id", "source_text_sha256", "status", "proposed_text", "rationale", "provider", "completed_at", "error"],
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "proposed_text": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  ]
+}

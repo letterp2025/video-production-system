@@ -1,10 +1,10 @@
 # Task Order: Local Script and Narration Workbench
 
-**Task ID:** SAW-001 | **Status:** Complete | **Last updated:** 2026-11-22
+**Task ID:** SAW-001 | **Status:** Complete | **Last updated:** 2026-11-23
 
 ## Objective
 
-Build a local-server web app that provides a user interface for script revision and narration work. The creator can attach a wording note to a segment, ask Codex for suggestions, review the response, and choose whether to apply a suggestion to the narration manifest.
+Build a local-server web app that provides a user interface for script revision and narration work. The creator can attach a wording note to a segment, create a durable AI request/result JSON handoff for any terminal AI assistant, review the response, and choose whether to apply a suggestion to the narration manifest. A bounded local Codex CLI action is optional, not the primary workflow.
 
 The manifest remains the lasting source of truth for approved spoken text, segment IDs and order, status, voice style, and TTS settings. The app is an interface around the manifest and existing narration tools, not a second script or audio system.
 
@@ -14,28 +14,29 @@ This first phase starts directly with script and audio work. A separate project-
 
 1. **Project manifest:** `narration_manifest.json` holds approved script and narration settings. The existing generator continues to own take generation, take selection, assembly, pruning, hashes, and performance records.
 2. **Tracked AI guide:** `ai_guide.json` lives with the public tool and is versioned in Git. It explains how UI concepts map to manifest fields, which fields the assistant may suggest changing, and rules such as preserving stable IDs and treating array order as playback order. It contains no project-specific narration, local paths, or voice recordings.
-3. **Temporary work state:** A project-local disk file separate from the manifest stores pending segment notes, assistant suggestions, review status, and the manifest text hash each suggestion was based on. It survives app restarts until resolved or cleared, but it is not canonical script data and does not affect narration hashes.
-4. **Accepted changes:** Only after the creator accepts a suggestion does the app apply the approved text or setting to the manifest. The existing generator then detects changed text or settings and regenerates only the affected take; order changes trigger assembly as defined by the generator.
+3. **Temporary work state:** `audio/.workbench/workbench_state.json` stores editorial notes, imported suggestions, review status, request-import markers, and the text hash each suggestion was based on. It survives app restarts until resolved or cleared, but it is not canonical script data and does not affect narration hashes.
+4. **AI handoff files:** `audio/narration_requests/<stable-segment-id>/requests/SCR-001/` contains immutable `request.json` plus separate `result.json`. The request is created by VPS and is provider-neutral; a user-run terminal AI reads it and writes only the result file. Repeated requests receive new IDs and preserve history.
+5. **Accepted changes:** Only after the creator accepts a suggestion does the app apply the approved text or setting to the manifest. The existing generator then detects changed text or settings and regenerates only the affected take; order changes trigger assembly as defined by the generator.
 
-Use a clearly named local work area such as `audio/.workbench/workbench_state.json`. Keep it out of the public repository and production audio outputs. Provide a way to clear resolved or stale work state.
+Use a clearly named local work area such as `audio/.workbench/workbench_state.json`. Keep only this temporary review state out of the public repository and production audio outputs; the project-owned request/result files remain in `audio/narration_requests/` as durable handoff history. Provide a way to clear resolved or stale review state without deleting those request files.
 
 ## Proposed workflow
 
 1. Start the local server for one explicitly selected narration project and open its loopback address in a browser.
 2. Review the manifest's segments in playback order. Select a segment and add a private editorial note, such as a request to clarify a line or make the transition less abrupt.
-3. Press **Ask Codex**. The app starts one local `codex exec` request with the note, selected segment, immediate adjacent text, and tracked `ai_guide.json`.
-4. Store the response as a suggestion in temporary work state. Do not silently overwrite the manifest. Let the creator compare the original and suggestion, optionally audition the proposed wording, then accept or dismiss it.
-5. On acceptance, update the manifest while preserving IDs, order, status, voice style, TTS settings, and unrelated fields. Preview or generate the changed segment with the existing narration tools.
-6. Review individual takes and the assembled narration, including transitions between segments.
+3. Press **Create AI request JSON**. VPS writes one stable-ID-scoped `request.json` and a `result.json` scaffold. The user manually gives that file to Codex, Claude, or another terminal AI, which fills the paired result. VPS does not host or launch that AI.
+4. Press **Refresh AI results**. VPS validates completed result identity and base-text hash, then imports it into the suggestion review queue. Optionally, the user can choose **Run with Codex CLI** on a request; this processes the same saved JSON and writes the same result format.
+5. Do not silently overwrite the manifest. Let the creator compare the original and suggestion, optionally audition the proposed wording, then accept or dismiss it.
+6. On acceptance, update the manifest while preserving IDs, order, status, voice style, TTS settings, and unrelated fields. Preview or generate the changed segment with the existing narration tools.
+7. Review individual takes and the assembled narration, including transitions between segments.
 
-## AI provider support
+## AI request and provider boundaries
 
-- **Codex:** The workbench checks for the local Codex CLI and launches one `codex exec` process for each explicit suggestion request. It uses `--ephemeral`, `--sandbox read-only`, `--ignore-user-config`, a structured output schema, and an empty temporary working directory. It retains Codex authentication but does not load custom providers, profiles, MCP servers, hooks, or rules from `config.toml`, and does not connect to or resume the current Codex chat conversation. This bounded CLI integration fits the single-request suggestion workflow.
-- **Claude:** Not implemented. No Claude environment was available for an end-to-end test, so the workbench does not show or claim Claude support.
-- If the Codex server is unavailable, report the failure clearly and keep the note in the temporary work queue. Do not drop the request or apply partial changes.
-- The user explicitly initiates each AI request. Show which segment text and context will be sent. Do not send voice-reference audio, unrelated segments, private paths, or the whole project by default.
-- Require a structured suggestion response that identifies the target segment and complete proposed spoken text. The assistant proposes wording only; voice and TTS settings are edited directly by the creator. The app applies suggestion text only after creator acceptance.
-- Ensure the AI request cannot write to the manifest, project audio, or other project files before acceptance. The Codex process runs read-only in an empty temporary working directory and receives the selected wording context through standard input.
+- The primary AI workflow is file-based and provider-neutral. `request.json` includes all fields from root `video_project.json`, the selected segment, note, immediate neighboring text, and generic guide; it excludes `narration_manifest.json`, audio files, takes, and unrelated narration segments. Since user-added fields in the root project manifest are included, review that file before sending the request to an external provider.
+- Keep `request.json` intact. The external assistant writes its proposal and status to the paired `result.json`; that file cannot change the approved narration by itself.
+- VPS validates request identity, result identity, and source-text hash before importing the result. A proposal based on words that have since changed is marked stale. The creator explicitly accepts any proposal before the manifest changes.
+- The optional local Codex CLI action runs one `codex exec` in an ephemeral read-only sandbox and writes into the same result contract. This is a CLI process, not a Codex server, and it is not required for the file workflow.
+- Show the exact context before handoff and keep a distinct request ID for every attempt. Never automatically launch an external assistant or apply a result.
 
 ## Requirements
 
@@ -60,10 +61,11 @@ Use a clearly named local work area such as `audio/.workbench/workbench_state.js
 - [x] Added text/title/status/voice-style/TTS editing, note persistence, Codex suggestion review, original-text comparison, audition, accept/dismiss, and resolved-suggestion cleanup.
 - [x] Connected transient SAPI preview, incremental persistent generation, selected-take playback, and active-segment assembly to the existing tools.
 - [x] Added loopback-only host/origin checks, constrained audio routes, manifest-byte conflict detection, atomic JSON writes, stale-suggestion detection, and safe read-only Codex requests.
+- [x] Added provider-neutral narration `request.json` / `result.json` handoff, explicit refresh/import, distinct `SCR-*` request history, and optional Codex CLI processing of the saved request.
 - [x] Updated this guide, tool index, installation requirements, root overview, and Git ignore rules.
 - [x] Tested Codex CLI 0.171.0 live through the local HTTP suggestion and acceptance flow using disposable generic sample text; recorded the outcome in the repository validation record.
 
-The interface supports reordering visible segments and writes that order to `narration_manifest.json`. It does not provide a project picker, persistent F5 model installation, pruning, Claude support, or a separate idea-outline stage.
+The interface supports reordering visible segments and writes that order to `narration_manifest.json`. It does not provide a project picker, persistent F5 model installation, pruning, built-in provider integrations beyond optional Codex CLI, or a separate idea-outline stage. External terminal AI tools can use the JSON handoff without a built-in provider integration.
 
 ## Follow-up review (2026-11-22)
 
@@ -76,14 +78,14 @@ The interface supports reordering visible segments and writes that order to `nar
 ## Completion criteria
 
 - A creator can run the app locally for one selected project and review/edit the manifest-backed narration.
-- A segment note survives app restart in temporary work state. Codex can return a suggestion which is stored separately and shown for review.
+- A segment note survives app restart in temporary work state. A user-run AI can read the project-owned request and write a result which VPS imports and shows for review.
 - A suggestion changes the manifest only after explicit acceptance. Rejected, pending, or stale suggestions do not alter spoken text or narration hashes.
 - Accepted text edits update the correct stable segment and existing generation behavior regenerates only affected narration; array-order changes are assembled by the existing CLI.
 - Segment order, IDs, status, voice style, TTS settings, selected takes, and tool-owned hashes remain consistent with the existing CLI.
 - Take ratings can be changed from the F5-TTS tab and are saved to the correct manifest review record without changing selected audio or assembly state.
 - The tracked AI guide documents field mapping and guardrails without containing project-specific or private material.
-- The app is loopback-only and confined to the selected project. AI requests show the context to be sent and preserve pending work if the provider is unavailable.
-- Codex integration is tested end to end. Claude support is not implemented.
+- The app is loopback-only and confined to the selected project. AI requests are file-based, show the context to be sent, and remain usable even when Codex CLI is unavailable.
+- The provider-neutral request/result workflow and optional Codex CLI adapter are covered by tests. Other providers can use the JSON contract without a VPS integration.
 - Tests and validation records cover success and key error cases; documentation explains setup, launch, provider requirements, temporary-state cleanup, outputs, and limitations.
 
 ## Boundaries

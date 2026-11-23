@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VPS narration edit request",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request_id": { "type": "string", "pattern": "^SCR-[0-9]{3,6}$" },
+    "segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+    "created_at": { "type": "string" },
+    "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "task": { "type": "string", "minLength": 1 },
+    "project_context": { "type": "object" },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "segment_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "title": { "type": "string" },
+        "text": { "type": "string" },
+        "note": { "type": "string" },
+        "previous_text": { "type": ["string", "null"] },
+        "next_text": { "type": ["string", "null"] }
+      },
+      "required": ["segment_id", "title", "text", "note", "previous_text", "next_text"]
+    },
+    "ai_guide": { "type": "object" }
+  },
+  "required": ["schema_version", "request_id", "segment_id", "created_at", "source_text_sha256", "task", "project_context", "context", "ai_guide"]
+}

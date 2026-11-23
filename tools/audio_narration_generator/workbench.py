@@ -48,23 +48,21 @@ def library_catalog(config_path: Path | None = None):
     return module.Catalog(TOOL_DIR.parents[1] / "libraries", private_root)
 
 
-def build_codex_prompt(guide_json: str, context: dict[str, Any]) -> str:
+def build_codex_prompt(request_document: dict[str, Any]) -> str:
     return (
-        "Revise one narration segment using the guide and context below. The creator explicitly requested "
-        "a suggestion. Return a complete replacement for the selected segment only. Keep facts and meaning "
-        "grounded in the supplied words. Do not make changes to files or use tools.\n\n"
-        "AI GUIDE (tracked public tool file):\n"
-        f"{guide_json}\n\n"
-        "REQUEST CONTEXT (only this segment, its note, and immediate neighbors):\n"
-        f"{json.dumps(context, ensure_ascii=False, indent=2)}\n"
+        "Process this VPS narration request. Its task, selected line, immediate context, and AI guide are all "
+        "contained in the request JSON. Return only a JSON object matching the supplied output schema. Do not "
+        "edit project files or use tools.\n\n"
+        f"NARRATION REQUEST JSON:\n{json.dumps(request_document, ensure_ascii=False, indent=2)}\n"
     )
 
 
-def run_codex_suggestion(codex_path: str, project: Project, segment_id: str, note: str) -> dict[str, str]:
-    if not note.strip():
-        raise WorkbenchError("Add a wording note before asking Codex.")
-    context, guide = project.codex_context(segment_id, note)
-    prompt = build_codex_prompt(guide, context)
+def run_codex_suggestion(codex_path: str, request_document: dict[str, Any]) -> dict[str, str]:
+    context = request_document.get("context")
+    if not isinstance(context, dict) or not isinstance(context.get("segment_id"), str):
+        raise WorkbenchError("Narration request is missing its segment context.", 422)
+    segment_id = context["segment_id"]
+    prompt = build_codex_prompt(request_document)
     with tempfile.TemporaryDirectory(prefix="narration-workbench-codex-") as temp_dir:
         response_path = Path(temp_dir) / "suggestion.json"
         command = [
@@ -78,9 +76,9 @@ def run_codex_suggestion(codex_path: str, project: Project, segment_id: str, not
                 capture_output=True, cwd=temp_dir, timeout=240, check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise WorkbenchError("Codex took more than four minutes. The note is still saved for another try.", 504) from exc
+            raise WorkbenchError("Codex took more than four minutes. The saved request JSON is still available for another try.", 504) from exc
         except OSError as exc:
-            raise WorkbenchError(f"Could not start Codex: {exc}. The note is still saved.", 503) from exc
+            raise WorkbenchError(f"Could not start Codex: {exc}. The saved request JSON is still available.", 503) from exc
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout).strip()[-1600:]
             raise WorkbenchError(f"Codex could not return a suggestion. {detail or 'Check Codex sign-in and CLI setup.'}", 502)
@@ -240,6 +238,7 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path == "/api/provider":
                     self._json(200, {
                         "preview": {"available": platform.system() == "Windows", "backend": "Windows SAPI" if platform.system() == "Windows" else "unsupported on this system"},
+                        "codex_cli": {"available": bool(codex_path)},
                     })
                 elif self.path.startswith("/api/audio/segment/"):
                     segment_id = self.path.removeprefix("/api/audio/segment/")
@@ -338,6 +337,36 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 elif self.path == "/api/visual-requests/open":
                     project.open_visual_request_file(self._required_string(body, "segment_id"), self._required_string(body, "request_id"), self._required_string(body, "filename"))
                     self._json(200, {"ok": True})
+                elif self.path == "/api/narration-requests/create":
+                    self._json(201, project.create_narration_request(
+                        self._required_string(body, "segment_id"), self._string(body, "note"),
+                        self._required_string(body, "manifest_hash"),
+                    ))
+                elif self.path == "/api/narration-requests/refresh":
+                    self._json(200, project.refresh_narration_requests(self._required_string(body, "segment_id")))
+                elif self.path == "/api/narration-requests/open":
+                    project.open_narration_request_file(
+                        self._required_string(body, "segment_id"),
+                        self._required_string(body, "request_id"),
+                        self._required_string(body, "filename"),
+                    )
+                    self._json(200, {"ok": True})
+                elif self.path == "/api/narration-requests/codex":
+                    segment_id = self._required_string(body, "segment_id")
+                    request_id = self._required_string(body, "request_id")
+                    if not codex_path:
+                        raise WorkbenchError("Codex CLI was not found. The request JSON is ready for any terminal AI assistant.", 503)
+                    request_document, result_document = project.narration_request_documents(segment_id, request_id)
+                    if result_document.get("status") in {"completed", "in_progress"}:
+                        raise WorkbenchError("This request is completed or already processing. Its result was left untouched.", 409)
+                    project.set_narration_request_status(segment_id, request_id, "in_progress")
+                    try:
+                        result = run_codex_suggestion(codex_path, request_document)
+                    except WorkbenchError as exc:
+                        project.set_narration_request_status(segment_id, request_id, "failed", str(exc))
+                        raise
+                    project.save_narration_result(segment_id, request_id, result)
+                    self._json(200, project.refresh_narration_requests(segment_id))
                 elif self.path == "/api/music/manifest/create":
                     result = project.create_project_music_manifest(self._required_string(body, "manifest_hash"))
                     self._json(201, result)
@@ -397,16 +426,6 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     segment_id = self._required_string(body, "segment_id")
                     project.save_note(segment_id, self._string(body, "note"))
                     self._json(200, {"ok": True, "state": project.state_payload()})
-                elif self.path == "/api/codex/suggest":
-                    segment_id = self._required_string(body, "segment_id")
-                    note = self._string(body, "note")
-                    project.save_note(segment_id, note)
-                    if not codex_path:
-                        raise WorkbenchError("Codex CLI was not found. Install or sign in to Codex, then restart this workbench. Your note is saved.", 503)
-                    context, _ = project.codex_context(segment_id, note)
-                    result = run_codex_suggestion(codex_path, project, segment_id, note)
-                    suggestion = project.store_suggestion(segment_id, note, result, context["text"])
-                    self._json(200, {"suggestion": suggestion, "state": project.state_payload()})
                 elif self.path == "/api/suggestion/accept":
                     state = project.accept_suggestion(
                         self._required_string(body, "segment_id"),

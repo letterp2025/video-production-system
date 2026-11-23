@@ -110,6 +110,85 @@ class ProjectTest(unittest.TestCase):
         saved_manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
         self.assertNotIn("note", saved_manifest["segments"][0])
 
+    def test_narration_request_is_provider_neutral_and_external_result_imports_once(self):
+        before = self.manifest.read_bytes()
+        (self.root / "video_project.json").write_text(json.dumps({
+            "schema_version": 1,
+            "project_title": "A short about VPS",
+            "project_idea": {"summary": "Explain the tool to a friend.", "creative_direction": "Warm and direct."},
+            "project_status": {"narration_script": "in_progress"},
+            "narration_outline": "Start with the problem, then reveal the workflow.",
+            "inspiration": {"artists": ["Example Artist"], "youtube_videos": [],
+                            "narration_samples": [], "other_references": []},
+        }), encoding="utf-8")
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        created = self.project.create_narration_request(
+            "opening-hook", "Make this easier to say aloud.", manifest_hash,
+        )
+        folder = self.root / "audio" / "narration_requests" / "opening-hook" / "requests" / "SCR-001"
+        request_doc = json.loads((folder / "request.json").read_text(encoding="utf-8"))
+        result_path = folder / "result.json"
+        result_doc = json.loads(result_path.read_text(encoding="utf-8"))
+        self.assertEqual(created["request_id"], "SCR-001")
+        self.assertEqual(created["relative_path"], "audio/narration_requests/opening-hook/requests/SCR-001/request.json")
+        self.assertEqual(request_doc["context"]["text"], "Start with a question.")
+        self.assertEqual(request_doc["context"]["note"], "Make this easier to say aloud.")
+        self.assertEqual(request_doc["context"]["next_text"], "Then explain the result.")
+        self.assertEqual(request_doc["project_context"]["project_title"], "A short about VPS")
+        self.assertEqual(request_doc["project_context"]["project_idea"]["creative_direction"], "Warm and direct.")
+        self.assertEqual(request_doc["project_context"]["inspiration"]["artists"], ["Example Artist"])
+        self.assertEqual(request_doc["project_context"]["project_status"]["narration_script"], "in_progress")
+        self.assertNotIn(str(self.root), json.dumps(request_doc))
+        self.assertNotIn("Private voice transcript", json.dumps(request_doc))
+        self.assertEqual(result_doc["status"], "requested")
+        self.assertEqual(self.manifest.read_bytes(), before)
+
+        result_doc.update({
+            "status": "completed",
+            "proposed_text": "Let's begin with a question.",
+            "rationale": "This sounds more natural when spoken.",
+            "provider": "Claude",
+            "completed_at": "2026-11-23T00:00:00+00:00",
+        })
+        result_path.write_text(json.dumps(result_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        refreshed = self.project.refresh_narration_requests("opening-hook")
+        self.assertEqual(refreshed["imported"], 1)
+        suggestion = refreshed["state"]["segments"][0]["work"]["suggestions"][0]
+        self.assertEqual(suggestion["provider"], "Claude")
+        self.assertEqual(suggestion["status"], "pending")
+        repeated = self.project.refresh_narration_requests("opening-hook")
+        self.assertEqual(repeated["imported"], 0)
+        self.assertEqual(len(repeated["state"]["segments"][0]["work"]["suggestions"]), 1)
+        self.assertEqual(self.manifest.read_bytes(), before)
+
+        self.project.accept_suggestion("opening-hook", suggestion["id"], self.project.state_payload()["manifest_hash"])
+        self.assertEqual(json.loads(self.manifest.read_text(encoding="utf-8"))["segments"][0]["text"], "Let's begin with a question.")
+        self.assertEqual(self.project.clear_resolved(), 1)
+        self.assertEqual(self.project.refresh_narration_requests("opening-hook")["imported"], 0)
+        second = self.project.create_narration_request(
+            "opening-hook", "Try a shorter version too.", self.project.state_payload()["manifest_hash"],
+        )
+        self.assertEqual(second["request_id"], "SCR-002")
+        self.assertTrue((folder / "request.json").is_file())
+
+    def test_external_narration_result_from_old_wording_is_stale_and_not_auto_applied(self):
+        created = self.project.create_narration_request(
+            "opening-hook", "Clarify the opening.", self.project.state_payload()["manifest_hash"],
+        )
+        folder = self.root / "audio" / "narration_requests" / "opening-hook" / "requests" / created["request_id"]
+        result_path = folder / "result.json"
+        result_doc = json.loads(result_path.read_text(encoding="utf-8"))
+        result_doc.update({"status": "completed", "proposed_text": "Try a clearer introduction.",
+                           "rationale": "Clearer.", "completed_at": "2026-11-23T00:00:00+00:00"})
+        result_path.write_text(json.dumps(result_doc), encoding="utf-8")
+        self.data["segments"][0]["text"] = "Changed after the request."
+        self.write_manifest()
+
+        refreshed = self.project.refresh_narration_requests("opening-hook")
+        suggestion = refreshed["state"]["segments"][0]["work"]["suggestions"][0]
+        self.assertEqual(suggestion["status"], "stale")
+        self.assertEqual(json.loads(self.manifest.read_text(encoding="utf-8"))["segments"][0]["text"], "Changed after the request.")
+
     def test_full_work_queue_does_not_replace_existing_state(self):
         self.project.save_note("opening-hook", "Keep this saved note.")
         before = self.project.work_path.read_bytes()
@@ -461,8 +540,11 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(suggestion["status"], "stale")
 
     def test_assistant_context_contains_only_selected_and_adjacent_script_fields(self):
-        context, guide = self.project.codex_context("opening-hook", "Improve the start.")
-        prompt = workbench.build_codex_prompt(guide, context)
+        created = self.project.create_narration_request(
+            "opening-hook", "Improve the start.", self.project.state_payload()["manifest_hash"],
+        )
+        request_doc, _ = self.project.narration_request_documents("opening-hook", created["request_id"])
+        prompt = workbench.build_codex_prompt(request_doc)
         self.assertIn("Start with a question.", prompt)
         self.assertIn("Then explain the result.", prompt)
         self.assertIn("Improve the start.", prompt)
@@ -472,6 +554,10 @@ class ProjectTest(unittest.TestCase):
         self.assertNotIn("custom_project_field", prompt)
 
     def test_codex_adapter_is_ephemeral_read_only_and_parses_structured_output(self):
+        created = self.project.create_narration_request(
+            "opening-hook", "Smooth this out.", self.project.state_payload()["manifest_hash"],
+        )
+        request_doc, _ = self.project.narration_request_documents("opening-hook", created["request_id"])
         captured = {}
 
         def fake_run(command, **kwargs):
@@ -485,7 +571,7 @@ class ProjectTest(unittest.TestCase):
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         with mock.patch.object(workbench.subprocess, "run", side_effect=fake_run):
-            result = workbench.run_codex_suggestion("codex", self.project, "opening-hook", "Smooth this out.")
+            result = workbench.run_codex_suggestion("codex", request_doc)
         self.assertEqual(result["proposed_text"], "A better spoken line.")
         self.assertIn("--ephemeral", captured["command"])
         self.assertIn("--ignore-user-config", captured["command"])
@@ -750,20 +836,92 @@ class HttpTest(unittest.TestCase):
             urlopen(request)
         self.assertEqual(context.exception.code, 403)
 
-    def test_codex_unavailable_preserves_note_and_manifest(self):
+    def test_codex_cli_unavailable_leaves_created_file_handoff_usable(self):
         before = self.manifest.read_bytes()
-        note = json.dumps({"segment_id": "beat-one", "note": "Make the line easier to say aloud."}).encode("utf-8")
-        request = Request(self.base + "/api/note", data=note, headers={"Content-Type": "application/json"}, method="POST")
+        manifest_hash = self.project.state_payload()["manifest_hash"]
+        body = json.dumps({"segment_id": "beat-one", "note": "Make the line easier to say aloud.",
+                           "manifest_hash": manifest_hash}).encode("utf-8")
+        request = Request(self.base + "/api/narration-requests/create", data=body,
+                          headers={"Content-Type": "application/json"}, method="POST")
         with urlopen(request) as response:
-            self.assertEqual(response.status, 200)
-        ask = json.dumps({"segment_id": "beat-one", "note": "Make the line easier to say aloud."}).encode("utf-8")
-        request = Request(self.base + "/api/codex/suggest", data=ask, headers={"Content-Type": "application/json"}, method="POST")
+            self.assertEqual(response.status, 201)
+            created = json.loads(response.read())
+        ask = json.dumps({"segment_id": "beat-one", "request_id": created["request_id"]}).encode("utf-8")
+        request = Request(self.base + "/api/narration-requests/codex", data=ask,
+                           headers={"Content-Type": "application/json"}, method="POST")
         with self.assertRaises(HTTPError) as context:
             urlopen(request)
         self.assertEqual(context.exception.code, 503)
         project_state = json.loads((self.manifest.parent / ".workbench" / "workbench_state.json").read_text(encoding="utf-8"))
         self.assertEqual(project_state["segments"]["beat-one"]["note"], "Make the line easier to say aloud.")
+        request_path = self.root / "audio" / "narration_requests" / "beat-one" / "requests" / created["request_id"] / "request.json"
+        self.assertTrue(request_path.is_file())
         self.assertEqual(self.manifest.read_bytes(), before)
+
+    def test_http_refresh_imports_external_result_without_changing_manifest(self):
+        before = self.manifest.read_bytes()
+        body = json.dumps({
+            "segment_id": "beat-one", "note": "Make this more conversational.",
+            "manifest_hash": self.project.state_payload()["manifest_hash"],
+        }).encode("utf-8")
+        create = Request(self.base + "/api/narration-requests/create", data=body,
+                         headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(create) as response:
+            created = json.loads(response.read())
+        result_path = (self.root / "audio" / "narration_requests" / "beat-one" / "requests"
+                       / created["request_id"] / "result.json")
+        result_doc = json.loads(result_path.read_text(encoding="utf-8"))
+        result_doc.update({"status": "completed", "proposed_text": "Let's explain it simply.",
+                           "rationale": "This is clearer aloud.", "provider": "Claude",
+                           "completed_at": "2026-11-23T00:00:00+00:00"})
+        result_path.write_text(json.dumps(result_doc), encoding="utf-8")
+        refresh = Request(
+            self.base + "/api/narration-requests/refresh",
+            data=json.dumps({"segment_id": "beat-one"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urlopen(refresh) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["imported"], 1)
+        suggestion = payload["state"]["segments"][0]["work"]["suggestions"][0]
+        self.assertEqual(suggestion["proposed_text"], "Let's explain it simply.")
+        self.assertEqual(suggestion["provider"], "Claude")
+        self.assertEqual(self.manifest.read_bytes(), before)
+
+    def test_optional_codex_cli_processes_saved_request_into_same_result_contract(self):
+        created = self.project.create_narration_request(
+            "beat-one", "Make it more conversational.", self.project.state_payload()["manifest_hash"],
+        )
+        server = workbench.ThreadingHTTPServer(
+            ("127.0.0.1", 0), workbench.create_handler(self.project, "codex", "python"),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            body = json.dumps({"segment_id": "beat-one", "request_id": created["request_id"]}).encode("utf-8")
+            request = Request(
+                f"http://127.0.0.1:{server.server_port}/api/narration-requests/codex", data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with mock.patch.object(workbench, "run_codex_suggestion", return_value={
+                "segment_id": "beat-one", "proposed_text": "Let's make this conversational.",
+                "rationale": "It sounds natural spoken aloud.",
+            }) as run_codex:
+                with urlopen(request) as response:
+                    payload = json.loads(response.read())
+            run_codex.assert_called_once()
+            self.assertIn("project_context", run_codex.call_args.args[1])
+            self.assertEqual(payload["imported"], 1)
+            result_path = (self.root / "audio" / "narration_requests" / "beat-one" / "requests"
+                           / created["request_id"] / "result.json")
+            result_doc = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(result_doc["status"], "completed")
+            self.assertEqual(result_doc["provider"], "Codex CLI")
+            self.assertEqual(payload["state"]["segments"][0]["work"]["suggestions"][0]["provider"], "Codex CLI")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_generation_blocks_concurrent_manifest_edits(self):
         started = threading.Event()

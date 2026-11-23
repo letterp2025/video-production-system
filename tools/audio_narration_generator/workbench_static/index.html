@@ -123,7 +123,7 @@
             <div class="review-head">
               <p class="section-kicker">SCRATCHPAD</p>
               <h2>Work the line</h2>
-              <p>Write down what feels off. Ask Codex for a suggestion when you're ready.</p>
+              <p>Write what you want changed. Create a request for Codex, Claude, or another AI to read from your project files.</p>
             </div>
             <label class="field-label" for="editorial-note">Your note</label>
             <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
@@ -131,12 +131,15 @@
               <button id="save-note" class="text-button" type="button">Save note</button>
               <span id="note-status" aria-live="polite"></span>
             </div>
-            <button id="ask-codex" class="button button-codex" type="button">
-              <span class="spark" aria-hidden="true">&#10035;</span><span>Ask Codex</span>
-            </button>
+            <div class="narration-request-actions">
+              <button id="create-narration-request" class="button button-codex" type="button">Create AI request JSON</button>
+              <button id="refresh-narration-requests" class="text-button" type="button">Refresh AI results</button>
+            </div>
+            <p class="narration-handoff-note">Primary workflow: use the request JSON in your terminal with any AI assistant. Optional: run the same request with the local Codex CLI.</p>
+            <div id="narration-requests" class="narration-requests-list" aria-live="polite"></div>
             <details class="request-detail">
-              <summary>Review what Codex receives</summary>
-              <p>Only the selected line, your note, the previous and next line, and the generic AI guide are sent. Voice references, audio, local paths, and unrelated segments stay out of the request.</p>
+              <summary>Review what goes in the request</summary>
+              <p>The JSON contains the full root project manifest, this segment and note, its immediate neighbors, and the generic AI guide. Review the project manifest before sending it. Audio files and the narration manifest are not copied into the request.</p>
               <div id="request-context" class="context-preview"></div>
             </details>
             <div class="suggestion-heading">

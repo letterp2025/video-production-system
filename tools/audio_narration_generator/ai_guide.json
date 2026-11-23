@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Guide the local narration workbench and its Codex script suggestions.",
+  "purpose": "Guide AI-assisted script suggestions from the local narration workbench.",
   "canonical_source": "The selected project's narration_manifest.json is the lasting source of truth.",
   "manifest_mapping": {
     "segments": "Each object is one narration beat. Array order is playback order.",

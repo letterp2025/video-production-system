@@ -25,6 +25,8 @@
 
 Use stable narration segments as the spine for brainstorming, selecting, and preparing the assets that will be assembled in a separate non-linear video editor (NLE). VPS is an asset-management and preparation workspace, not an NLE, mixer, or final video renderer. Visual Layer is a JSON interface for a separate terminal Codex workflow; it is not a Codex server or renderer launcher. This document records the implemented layer workflow and its explicit NLE boundary.
 
+The Script and Narration Layer follows the same file-first principle for editorial AI requests: VPS creates a stable-ID-scoped `request.json` and paired `result.json`, including the full root project manifest as creative context; the user can process them with any terminal AI assistant. A local Codex CLI action is optional. VPS does not host a Codex server or require Codex for this handoff. See the [narration workbench guide](../../tools/audio_narration_generator/README.md#ai-request-and-privacy) for its path and JSON contract.
+
 ## Product intent and target design
 
 - Keep **Script and Narration Layer**, **Visual Layer**, and **Music Layer** as the three top-level work areas. Sound effects (SFX) belong inside **Visual Layer**, alongside the visual take and segment they support; do not expose SFX as a separate top-level tab.

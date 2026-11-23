@@ -16,6 +16,7 @@ from typing import Any
 import generate_narration as narration
 from workbench_audio import AudioReadMixin
 from workbench_layer_mappings import AudioLayerMappingMixin
+from workbench_narration_requests import NarrationRequestsMixin
 from workbench_common import (
     AI_GUIDE_PATH, MAX_NOTE_CHARS, MAX_TEXT_CHARS, MAX_TITLE_CHARS,
     MAX_TTS_VALUES, MAX_WORK_STATE_BYTES,
@@ -25,7 +26,7 @@ from workbench_common import (
 from workbench_visuals import VisualPlanMixin
 
 
-class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
+class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
     """Manifest and private work queue, with focused audio and layer helpers."""
 
     def __init__(self, manifest_path: Path):
@@ -162,6 +163,11 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
                 raise WorkbenchError("Temporary work state contains an invalid segment entry.", 500)
             if not isinstance(work.get("note", ""), str) or not isinstance(work.get("suggestions", []), list):
                 raise WorkbenchError(f"Temporary work state for {segment_id} has invalid fields.", 500)
+            imported_requests = work.get("imported_request_ids", [])
+            if (not isinstance(imported_requests, list)
+                or any(not isinstance(item, str) for item in imported_requests)
+                or len(set(imported_requests)) != len(imported_requests)):
+                raise WorkbenchError(f"Temporary work state for {segment_id} has invalid request history.", 500)
             for suggestion in work.get("suggestions", []):
                 suggestion_status = suggestion.get("status") if isinstance(suggestion, dict) else None
                 if not isinstance(suggestion, dict) or not isinstance(suggestion_status, str) or suggestion_status not in {"pending", "accepted", "dismissed", "stale"}:
@@ -260,6 +266,10 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
                         except (EOFError, OSError, wave.Error, WorkbenchError):
                             duration_seconds = None
                 work = state["segments"].get(segment_id, {})
+                work_payload = self._work_summary(work, segment["text"])
+                work_payload["requests"] = self.narration_requests_payload(
+                    segment_id, work if isinstance(work, dict) else {},
+                )
                 segments.append({
                     "position": index + 1,
                     "id": segment_id,
@@ -274,7 +284,7 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
                     "has_selected_take": bool(selected),
                     "audio_url": f"/api/audio/segment/{segment_id}" if selected else None,
                     "takes": self._segment_takes(data, segment),
-                    "work": self._work_summary(work, segment["text"]),
+                    "work": work_payload,
                     "visual_plan": self._visual_plan_summary(segment, recipes_by_id),
                     "visual_take_segment": self.visual_take_segment_payload(segment, visual_layer, visual_take_document),
                     "music_mapping": self._audio_mapping_summary("music", segment),
@@ -568,6 +578,7 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
 
     def store_suggestion(
         self, segment_id: str, note: str, result: dict[str, Any], base_text: str,
+        *, request_id: str | None = None,
     ) -> dict[str, Any]:
         with self.lock:
             data, _ = self.read_manifest()
@@ -575,6 +586,13 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
             state = self.read_state()
             work = state["segments"].setdefault(segment_id, {"note": note, "suggestions": []})
             work.setdefault("note", note)
+            if request_id:
+                existing = next((
+                    item for item in work.get("suggestions", [])
+                    if isinstance(item, dict) and item.get("request_id") == request_id
+                ), None)
+                if existing:
+                    return existing
             base_hash = text_hash(base_text)
             suggestion = {
                 "id": uuid.uuid4().hex,
@@ -586,6 +604,10 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
                 "rationale": result["rationale"],
                 "note": note,
             }
+            if isinstance(result.get("provider"), str):
+                suggestion["provider"] = result["provider"]
+            if request_id:
+                suggestion["request_id"] = request_id
             if suggestion["status"] == "stale":
                 suggestion["resolved_at"] = now_iso()
             work.setdefault("suggestions", []).append(suggestion)

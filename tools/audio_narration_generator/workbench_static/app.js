@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, previewAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
+const state = { project: null, selectedId: null, insertAfterId: null, manifestHash: null, baseline: null, noteBaseline: null, busy: false, showInactive: false, showDeleted: false, showOtherTakesFor: null, previewAvailable: false, codexAvailable: false, playbackActive: false, playbackFollowId: null, playbackTimeline: [], playbackManualSelection: true, playbackResumeTime: null, assemblySourceName: null, sapiSequenceActive: false, sapiTimeline: [], sapiManifestHash: null, sapiManualSelection: true, sapiResumeTime: null, sapiStarted: false };
 const $ = (id) => document.getElementById(id);
 let libraryEntries = [];
 let librarySelected = null;
@@ -437,11 +437,12 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
-  ["save-segment", "ask-codex", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-manifest", "open-music-manifest"].forEach((id) => {
+  ["save-segment", "create-narration-request", "refresh-narration-requests", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-manifest", "open-music-manifest"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
   });
   document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button, #take-history-list select").forEach((item) => { item.disabled = value; });
+  document.querySelectorAll("#narration-requests button").forEach((item) => { item.disabled = value; });
   document.querySelectorAll("#visual-request-create button, #visual-request-create textarea, #visual-request-create select, #visual-request-list button, #visual-request-create input").forEach((item) => { item.disabled = value; });
   updateDirtyState();
 }
@@ -467,7 +468,8 @@ function updateDirtyState() {
   $("save-state").textContent = invalidTts ? "Check speech settings" : dirty ? "Unsaved changes" : "Saved";
   $("save-state").classList.toggle("dirty", dirty);
   $("save-segment").disabled = state.busy || !dirty || invalidTts;
-  $("ask-codex").disabled = state.busy || dirty || !currentSegment();
+  $("create-narration-request").disabled = state.busy || dirty || !currentSegment() || !$("editorial-note").value.trim();
+  $("refresh-narration-requests").disabled = state.busy || !currentSegment();
   $("generate-take").disabled = state.busy || dirty || currentSegment()?.status !== "active";
   $("assemble-audio").disabled = state.busy || dirty;
   $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active");
@@ -708,7 +710,7 @@ function renderSuggestions(segment) {
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "suggestions-empty";
-    empty.textContent = "Codex suggestions will appear here for review. Nothing is applied until you accept it.";
+    empty.textContent = "Completed AI requests appear here after you refresh. Nothing changes in the narration manifest until you accept a suggestion.";
     host.append(empty);
     return;
   }
@@ -760,6 +762,122 @@ function renderSuggestions(segment) {
     }
     host.append(card);
   }
+}
+
+function renderNarrationRequests(segment) {
+  const host = $("narration-requests");
+  host.replaceChildren();
+  const requests = segment?.work?.requests || [];
+  if (!requests.length) {
+    const empty = document.createElement("p");
+    empty.className = "narration-requests-empty";
+    empty.textContent = "No AI request files for this segment yet.";
+    host.append(empty);
+    return;
+  }
+  for (const item of [...requests].reverse()) {
+    const card = document.createElement("article");
+    card.className = "narration-request-card";
+    const heading = document.createElement("div");
+    heading.className = "narration-request-heading";
+    const id = document.createElement("strong");
+    id.textContent = item.request_id || "Request";
+    const status = document.createElement("span");
+    const statusLabel = item.status === "pending" ? "Needs review" : item.status;
+    status.textContent = item.provider ? `${statusLabel} · ${item.provider}` : statusLabel;
+    heading.append(id, status);
+    card.append(heading);
+    if (item.relative_path) {
+      const path = document.createElement("code");
+      path.textContent = item.relative_path;
+      card.append(path);
+    }
+    if (item.error) {
+      const error = document.createElement("p");
+      error.className = "narration-request-error";
+      error.textContent = item.error;
+      card.append(error);
+    }
+    const actions = document.createElement("div");
+    actions.className = "narration-request-buttons";
+    for (const filename of ["request.json", "result.json"]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "text-button";
+      button.textContent = `Open ${filename}`;
+      button.disabled = state.busy || !item.request_id || item.status === "invalid";
+      button.addEventListener("click", () => openNarrationRequestFile(item.request_id, filename));
+      actions.append(button);
+    }
+    if (state.codexAvailable && ["requested", "failed"].includes(item.result_status)) {
+      const codex = document.createElement("button");
+      codex.type = "button";
+      codex.className = "text-button";
+      codex.textContent = "Optional: run with Codex CLI";
+      codex.disabled = state.busy;
+      codex.addEventListener("click", () => processNarrationRequestWithCodex(item.request_id, codex));
+      actions.append(codex);
+    }
+    card.append(actions);
+    host.append(card);
+  }
+}
+
+async function openNarrationRequestFile(requestId, filename) {
+  try {
+    await request("/api/narration-requests/open", { segment_id: state.selectedId, request_id: requestId, filename });
+  } catch (error) { toast(error.message); }
+}
+
+async function createNarrationRequest() {
+  if (isDirty()) return toast("Save the segment before creating an AI request.");
+  const note = $("editorial-note").value;
+  if (!note.trim()) return toast("Add a wording note first.");
+  try {
+    setBusy(true);
+    const result = await request("/api/narration-requests/create", {
+      segment_id: state.selectedId, note, manifest_hash: state.project.manifest_hash
+    });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    state.noteBaseline = note;
+    renderProject();
+    toast(`${result.request_id} created. Use its request.json with any terminal AI assistant.`);
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); updateDirtyState(); }
+}
+
+async function refreshNarrationRequests() {
+  if (isNoteDirty()) return toast("Save the note or create its request before refreshing results.");
+  try {
+    setBusy(true);
+    const result = await request("/api/narration-requests/refresh", { segment_id: state.selectedId });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    renderProject();
+    toast(result.imported
+      ? `${result.imported} AI result${result.imported === 1 ? "" : "s"} added for review. The manifest is unchanged.`
+      : "No new completed AI results. The narration manifest is unchanged.");
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); updateDirtyState(); }
+}
+
+async function processNarrationRequestWithCodex(requestId, button) {
+  if (isDirty()) return toast("Save the segment before running an AI request.");
+  if (isNoteDirty()) return toast("Save the note or create its request before running Codex CLI.");
+  try {
+    setBusy(true);
+    button.textContent = "Codex CLI is working…";
+    const result = await request("/api/narration-requests/codex", { segment_id: state.selectedId, request_id: requestId });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    renderProject();
+    toast("Codex result added for review. The narration manifest was not changed.");
+  } catch (error) {
+    toast(error.message);
+    await refreshState().catch(() => {});
+  }
+  finally { setBusy(false); updateDirtyState(); }
 }
 
 function renderContext(segment) {
@@ -817,6 +935,7 @@ function renderEditor() {
   renderTts(segment);
   renderTakes(segment);
   renderSuggestions(segment);
+  renderNarrationRequests(segment);
   renderContext(segment);
   state.baseline = snapshotKey(snapshot());
   setAssemblyAudioSource($("assembly-audio"), state.project.assembled_audio_url || null, state.project.assembled_audio_name || null);
@@ -843,6 +962,7 @@ function followPlaybackBeat(segmentId) {
   renderTts(segment);
   renderTakes(segment);
   renderSuggestions(segment);
+  renderNarrationRequests(segment);
   renderContext(segment);
   renderLayerPanels(segment);
   state.baseline = snapshotKey(snapshot());
@@ -1254,24 +1374,6 @@ async function saveNote() {
   finally { setBusy(false); }
 }
 
-async function askCodex() {
-  if (isDirty()) return toast("Save the segment before asking Codex to revise it.");
-  const note = $("editorial-note").value;
-  if (!note.trim()) return toast("Add a wording note first.");
-  try {
-    setBusy(true);
-    $("ask-codex").innerHTML = '<span class="spark" aria-hidden="true">✳</span><span>Codex is thinking…</span>';
-    await request("/api/codex/suggest", { segment_id: state.selectedId, note });
-    await refreshState();
-    toast("Suggestion saved for review. The manifest was not changed.");
-  } catch (error) { toast(error.message); }
-  finally {
-    $("ask-codex").innerHTML = '<span class="spark" aria-hidden="true">✳</span><span>Ask Codex</span>';
-    setBusy(false);
-    updateDirtyState();
-  }
-}
-
 async function acceptSuggestion(id) {
   if (isNoteDirty()) return toast("Save the note before accepting a suggestion.");
   try {
@@ -1409,10 +1511,13 @@ async function checkPreviewAvailability() {
   try {
     const result = await request("/api/provider");
     state.previewAvailable = Boolean(result.preview?.available);
+    state.codexAvailable = Boolean(result.codex_cli?.available);
     updateDirtyState();
     if (currentSegment()) renderSuggestions(currentSegment());
+    if (currentSegment()) renderNarrationRequests(currentSegment());
   } catch {
     state.previewAvailable = false;
+    state.codexAvailable = false;
     updateDirtyState();
   }
 }
@@ -1508,7 +1613,8 @@ function bindEvents() {
   $("move-beat-up").addEventListener("click", () => moveSegment(state.selectedId, -1));
   $("move-beat-down").addEventListener("click", () => moveSegment(state.selectedId, 1));
   $("save-note").addEventListener("click", saveNote);
-  $("ask-codex").addEventListener("click", askCodex);
+  $("create-narration-request").addEventListener("click", createNarrationRequest);
+  $("refresh-narration-requests").addEventListener("click", refreshNarrationRequests);
   $("play-active-narration").addEventListener("click", playActiveNarration);
   $("play-sapi-sequence").addEventListener("click", playSapiSequence);
   const sapiAudio = $("sapi-audio");

@@ -272,6 +272,20 @@ audio { width: 100%; height: 34px; }
 .note-input { width: 100%; min-height: 108px; resize: vertical; padding: 11px; border: 1px solid var(--line); border-left: 3px solid var(--red); background: #fff; font-size: 12px; line-height: 1.5; }
 .note-actions { display: flex; justify-content: space-between; align-items: center; min-height: 26px; }
 .note-actions span { color: var(--muted); font-size: 9px; }
+.narration-request-actions { display: grid; gap: 5px; margin-top: 10px; }
+.narration-request-actions .button { width: 100%; min-height: 43px; padding: 0 10px; font-size: 11px; }
+.narration-request-actions .text-button { justify-self: start; padding: 4px 0; font-size: 10px; }
+.narration-handoff-note { margin: 9px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.narration-requests-list { margin-top: 10px; }
+.narration-requests-empty { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.narration-request-card { margin-top: 8px; padding: 9px; border: 1px solid var(--line); background: #f3f3ef; }
+.narration-request-heading { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.narration-request-heading strong, .narration-request-heading span { font-size: 9px; }
+.narration-request-heading span { color: var(--muted); text-align: right; }
+.narration-request-card code { display: block; color: #536465; font-size: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+.narration-request-buttons { display: flex; flex-wrap: wrap; gap: 7px 10px; margin-top: 6px; }
+.narration-request-buttons .text-button { padding: 3px 0; font-size: 9px; }
+.narration-request-error { margin: 6px 0 0; color: #a72f28; font-size: 9px; line-height: 1.4; }
 .request-detail { margin-top: 14px; }
 .request-detail summary { color: #376873; font-size: 10px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .request-detail > p { margin: 9px 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
