@@ -1,12 +1,20 @@
 # Task Order: Workbench Layer Tabs
 
-**Task ID:** WLT-001 | **Status:** Planned | **Last updated:** 2026-11-23
+**Task ID:** WLT-001 | **Status:** Implemented | **Last updated:** 2026-11-23
+
+## Implementation record
+
+- Added four top-level layer tabs for the selected beat. Scratchpad and F5-TTS remain nested within Script and Narration Layer.
+- Moved recipe selection, visual-plan creation/opening, and plan status into Visual Layer. The global header now holds project context and narration playback only.
+- Music Layer and SoundEffects Layer show the selected beat and explain the planned JSON mapping workflow. Their mapping editors and audio composition are not implemented by WLT-001.
+- Added arrow-key, Home, and End tab navigation with selected-tab semantics. The narrow layout changes from four columns to two and then one.
+- Updated the workbench guide to describe the new navigation. Automated tests were not run for this task.
 
 ## Objective
 
 Organize the selected beat's editing workspace around four top-level production layers. Nest the existing **Scratchpad** and **F5-TTS** tabs inside **Script and Narration Layer**, and provide separate top-level tabs named **Visual Layer**, **Music Layer**, and **SoundEffects Layer**. This gives each layer a dedicated place and removes per-beat visual controls from the crowded global header.
 
-This task defines the workbench navigation and layout. The larger scope for music/SFX JSON mappings and their boundaries is in the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). This task order does not implement the UI.
+This task defines the workbench navigation and layout. The larger scope for music/SFX JSON mappings and their boundaries is in the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
 
 ## Intended navigation
 

@@ -34,19 +34,6 @@
       </label>
       <span id="playback-status" class="playback-status" role="status" aria-live="polite"></span>
     </div>
-    <div class="visual-planner" aria-label="Visual animation plan for the selected beat">
-      <label class="visual-recipe-field" for="visual-recipe">
-        <span id="visual-beat-label">Visual for selected beat</span>
-        <select id="visual-recipe" disabled>
-          <option value="">Custom plan (no library recipe)</option>
-        </select>
-      </label>
-      <div class="visual-plan-actions">
-        <button id="create-visual-plan" class="button button-visual" type="button" disabled>Create visual JSON</button>
-        <button id="open-visual-plan" class="text-button" type="button" hidden>Open JSON</button>
-      </div>
-      <span id="visual-plan-status" class="visual-plan-status" role="status" aria-live="polite">Loading plan status…</span>
-    </div>
   </header>
 
   <main class="layout">
@@ -76,110 +63,166 @@
       </div>
     </aside>
 
-    <section class="editor-panel" aria-label="Selected narration segment">
-      <div id="empty-state" class="empty-state" hidden>
-        <span class="empty-glyph" aria-hidden="true">✳</span>
-        <h2>No narration segments</h2>
-        <p>Add segment objects to the project's narration manifest, then reload this page.</p>
+    <section class="layer-workspace" aria-label="Selected beat production layers">
+      <div class="layer-tabs" role="tablist" aria-label="Production layers">
+        <button id="tab-script-layer" class="layer-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-script-layer" tabindex="0">Script and Narration Layer</button>
+        <button id="tab-visual-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-visual-layer" tabindex="-1">Visual Layer</button>
+        <button id="tab-music-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-music-layer" tabindex="-1">Music Layer</button>
+        <button id="tab-soundeffects-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-soundeffects-layer" tabindex="-1">SoundEffects Layer</button>
       </div>
-      <div id="editor" hidden>
-        <div class="editor-topline">
-          <div class="position-label"><span id="segment-position">BEAT</span><span class="rule"></span><span id="segment-id"></span></div>
-          <span class="save-state" id="save-state" aria-live="polite">Saved</span>
-        </div>
-        <div class="title-row">
-          <label class="field-label" for="segment-title">Segment title</label>
-          <div class="title-actions">
-            <div class="beat-order-controls" role="group" aria-label="Move selected beat">
-              <button id="move-beat-up" type="button" title="Move selected beat up">↑ Move beat up</button>
-              <button id="move-beat-down" type="button" title="Move selected beat down">↓ Move beat down</button>
+
+      <section id="panel-script-layer" class="layer-tab-panel script-layer-panel" role="tabpanel" aria-labelledby="tab-script-layer" tabindex="0">
+        <section class="editor-panel" aria-label="Selected narration segment">
+          <div id="empty-state" class="empty-state" hidden>
+            <span class="empty-glyph" aria-hidden="true">✳</span>
+            <h2>No narration segments</h2>
+            <p>Add segment objects to the project's narration manifest, then reload this page.</p>
+          </div>
+          <div id="editor" hidden>
+            <div class="editor-topline">
+              <div class="position-label"><span id="segment-position">BEAT</span><span class="rule"></span><span id="segment-id"></span></div>
+              <span class="save-state" id="save-state" aria-live="polite">Saved</span>
             </div>
-            <select id="segment-status" aria-label="Segment status">
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deleted">Deleted</option>
-            </select>
+            <div class="title-row">
+              <label class="field-label" for="segment-title">Segment title</label>
+              <div class="title-actions">
+                <div class="beat-order-controls" role="group" aria-label="Move selected beat">
+                  <button id="move-beat-up" type="button" title="Move selected beat up">↑ Move beat up</button>
+                  <button id="move-beat-down" type="button" title="Move selected beat down">↓ Move beat down</button>
+                </div>
+                <select id="segment-status" aria-label="Segment status">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="deleted">Deleted</option>
+                </select>
+              </div>
+            </div>
+            <input id="segment-title" class="title-input" maxlength="160" autocomplete="off">
+            <div class="script-heading">
+              <label class="field-label" for="segment-text">Spoken words</label>
+              <span id="word-count" class="word-count">0 words</span>
+            </div>
+            <textarea id="segment-text" spellcheck="true" aria-describedby="script-hint"></textarea>
+            <div class="script-foot">
+              <p id="script-hint">This is the approved narration text in the manifest.</p>
+              <button id="save-segment" class="button button-ink" type="button">Save segment</button>
+            </div>
           </div>
-        </div>
-        <input id="segment-title" class="title-input" maxlength="160" autocomplete="off">
-        <div class="script-heading">
-          <label class="field-label" for="segment-text">Spoken words</label>
-          <span id="word-count" class="word-count">0 words</span>
-        </div>
-        <textarea id="segment-text" spellcheck="true" aria-describedby="script-hint"></textarea>
-        <div class="script-foot">
-          <p id="script-hint">This is the approved narration text in the manifest.</p>
-          <button id="save-segment" class="button button-ink" type="button">Save segment</button>
-        </div>
-
-      </div>
-      <div id="toast" role="status" aria-live="polite"></div>
-    </section>
-
-    <aside class="review-panel" aria-label="Selected beat tools">
-      <div class="utility-tabs" role="tablist" aria-label="Beat tools">
-        <button id="tab-scratchpad" class="utility-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-scratchpad" tabindex="0">Scratchpad</button>
-        <button id="tab-f5tts" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-f5tts" tabindex="-1">F5-TTS</button>
-      </div>
-
-      <section id="panel-scratchpad" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-scratchpad" tabindex="0">
-        <div class="review-head">
-          <p class="section-kicker">SCRATCHPAD</p>
-          <h2>Work the line</h2>
-          <p>Write down what feels off. Ask Codex for a suggestion when you're ready.</p>
-        </div>
-        <label class="field-label" for="editorial-note">Your note</label>
-        <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
-        <div class="note-actions">
-          <button id="save-note" class="text-button" type="button">Save note</button>
-          <span id="note-status" aria-live="polite"></span>
-        </div>
-        <button id="ask-codex" class="button button-codex" type="button">
-          <span class="spark" aria-hidden="true">&#10035;</span><span>Ask Codex</span>
-        </button>
-        <details class="request-detail">
-          <summary>Review what Codex receives</summary>
-          <p>Only the selected line, your note, the previous and next line, and the generic AI guide are sent. Voice references, audio, local paths, and unrelated segments stay out of the request.</p>
-          <div id="request-context" class="context-preview"></div>
-        </details>
-        <div class="suggestion-heading">
-          <h3>Suggestions</h3><span id="suggestion-count">0</span>
-        </div>
-        <div id="suggestions" class="suggestions-list"></div>
-      </section>
-
-      <section id="panel-f5tts" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-f5tts" tabindex="0" hidden>
-        <div class="review-head">
-          <p class="section-kicker">F5-TTS</p>
-          <h2>Takes and delivery</h2>
-          <p>Compare this beat's takes, then adjust its voice for the next render.</p>
-        </div>
-        <div class="take-history">
-          <h3>Take history</h3>
-          <p id="take-history-summary" class="take-history-summary"></p>
-          <div id="take-history-list" class="take-history-list"></div>
-          <button id="show-other-takes" class="show-other-takes" type="button" aria-controls="take-history-list" aria-expanded="false" hidden></button>
-        </div>
-        <details class="voice-settings">
-          <summary>Voice and speech settings</summary>
-        <div class="settings-grid">
-          <label>Voice style
-            <select id="voice-style"></select>
-            <small>Choose a reference profile already defined in the manifest.</small>
-          </label>
-          <div class="tts-fields" id="tts-fields"></div>
-        </div>
-        </details>
-        <section class="listening-panel" aria-label="Narration playback">
-          <div class="generation-actions">
-            <button id="generate-take" class="button button-signal" type="button">Generate missing or changed takes</button>
-            <button id="assemble-audio" class="button button-outline" type="button">Assemble active segments</button>
-          </div>
-          <pre id="tool-output" class="tool-output" hidden></pre>
         </section>
+
+        <aside class="review-panel" aria-label="Script and narration tools">
+          <div class="utility-tabs" role="tablist" aria-label="Script and narration tools">
+            <button id="tab-scratchpad" class="utility-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-scratchpad" tabindex="0">Scratchpad</button>
+            <button id="tab-f5tts" class="utility-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-f5tts" tabindex="-1">F5-TTS</button>
+          </div>
+          <section id="panel-scratchpad" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-scratchpad" tabindex="0">
+            <div class="review-head">
+              <p class="section-kicker">SCRATCHPAD</p>
+              <h2>Work the line</h2>
+              <p>Write down what feels off. Ask Codex for a suggestion when you're ready.</p>
+            </div>
+            <label class="field-label" for="editorial-note">Your note</label>
+            <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
+            <div class="note-actions">
+              <button id="save-note" class="text-button" type="button">Save note</button>
+              <span id="note-status" aria-live="polite"></span>
+            </div>
+            <button id="ask-codex" class="button button-codex" type="button">
+              <span class="spark" aria-hidden="true">&#10035;</span><span>Ask Codex</span>
+            </button>
+            <details class="request-detail">
+              <summary>Review what Codex receives</summary>
+              <p>Only the selected line, your note, the previous and next line, and the generic AI guide are sent. Voice references, audio, local paths, and unrelated segments stay out of the request.</p>
+              <div id="request-context" class="context-preview"></div>
+            </details>
+            <div class="suggestion-heading">
+              <h3>Suggestions</h3><span id="suggestion-count">0</span>
+            </div>
+            <div id="suggestions" class="suggestions-list"></div>
+          </section>
+          <section id="panel-f5tts" class="utility-tab-panel" role="tabpanel" aria-labelledby="tab-f5tts" tabindex="0" hidden>
+            <div class="review-head">
+              <p class="section-kicker">F5-TTS</p>
+              <h2>Takes and delivery</h2>
+              <p>Compare this beat's takes, then adjust its voice for the next render.</p>
+            </div>
+            <div class="take-history">
+              <h3>Take history</h3>
+              <p id="take-history-summary" class="take-history-summary"></p>
+              <div id="take-history-list" class="take-history-list"></div>
+              <button id="show-other-takes" class="show-other-takes" type="button" aria-controls="take-history-list" aria-expanded="false" hidden></button>
+            </div>
+            <details class="voice-settings">
+              <summary>Voice and speech settings</summary>
+              <div class="settings-grid">
+                <label>Voice style
+                  <select id="voice-style"></select>
+                  <small>Choose a reference profile already defined in the manifest.</small>
+                </label>
+                <div class="tts-fields" id="tts-fields"></div>
+              </div>
+            </details>
+            <section class="listening-panel" aria-label="Narration playback">
+              <div class="generation-actions">
+                <button id="generate-take" class="button button-signal" type="button">Generate missing or changed takes</button>
+                <button id="assemble-audio" class="button button-outline" type="button">Assemble active segments</button>
+              </div>
+              <pre id="tool-output" class="tool-output" hidden></pre>
+            </section>
+          </section>
+        </aside>
       </section>
-    </aside>
+
+      <section id="panel-visual-layer" class="layer-tab-panel visual-layer-panel" role="tabpanel" aria-labelledby="tab-visual-layer" tabindex="0" hidden>
+        <div class="layer-content">
+          <div class="layer-heading">
+            <div class="position-label"><span id="visual-beat-label">Visual for selected beat</span><span class="rule"></span></div>
+            <p class="section-kicker">VISUAL LAYER</p>
+            <h1>Plan the visual</h1>
+            <p>Choose a library recipe or make a custom plan for this beat. The JSON records intent; it does not render the animation.</p>
+          </div>
+          <div class="visual-plan-form">
+            <label class="visual-recipe-field" for="visual-recipe">
+              <span>Animation recipe</span>
+              <select id="visual-recipe" disabled>
+                <option value="">Custom plan (no library recipe)</option>
+              </select>
+            </label>
+            <div class="visual-plan-actions">
+              <button id="create-visual-plan" class="button button-visual" type="button" disabled>Create visual JSON</button>
+              <button id="open-visual-plan" class="text-button" type="button" hidden>Open JSON</button>
+            </div>
+            <span id="visual-plan-status" class="visual-plan-status" role="status" aria-live="polite">Loading plan status…</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-music-layer" class="layer-tab-panel reserved-layer-panel" role="tabpanel" aria-labelledby="tab-music-layer" tabindex="0" hidden>
+        <div class="layer-content layer-placeholder">
+          <p class="section-kicker">MUSIC LAYER</p>
+          <h1>Music for this beat</h1>
+          <p id="music-layer-beat" class="layer-segment-context">Select a beat to see its music workspace.</p>
+          <div class="layer-placeholder-note">
+            <span class="placeholder-rule" aria-hidden="true"></span>
+            <div><strong>Per-beat mapping is the next step</strong><p>Use Asset Finder separately to source audio. This workspace will hold the beat's music cue JSON; playback and mixing will be handled later.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-soundeffects-layer" class="layer-tab-panel reserved-layer-panel" role="tabpanel" aria-labelledby="tab-soundeffects-layer" tabindex="0" hidden>
+        <div class="layer-content layer-placeholder">
+          <p class="section-kicker">SOUND EFFECTS LAYER</p>
+          <h1>Sound effects for this beat</h1>
+          <p id="soundeffects-layer-beat" class="layer-segment-context">Select a beat to see its sound effects workspace.</p>
+          <div class="layer-placeholder-note">
+            <span class="placeholder-rule" aria-hidden="true"></span>
+            <div><strong>Per-beat mapping is the next step</strong><p>Use Asset Finder separately to source audio. This workspace will hold the beat's SFX cue JSON; playback and mixing will be handled later.</p></div>
+          </div>
+        </div>
+      </section>
+    </section>
   </main>
+  <div id="toast" role="status" aria-live="polite"></div>
   <footer class="footer-line">
     <span>Local only · Changes go to the selected narration manifest after review</span>
     <button id="reload-project" class="text-button" type="button">Reload manifest</button>

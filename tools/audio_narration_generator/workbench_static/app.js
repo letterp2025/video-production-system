@@ -50,6 +50,13 @@ function renderVisualPlanner(segment) {
   $("visual-beat-label").textContent = segment
     ? `Visual for beat ${String(segment.position).padStart(2, "0")} · ${segment.id}`
     : "Visual for selected beat";
+  const beatContext = segment
+    ? "Beat " + String(segment.position).padStart(2, "0") + " · " + (segment.title || segment.id) + " (" + segment.id + ")"
+    : "No beat selected.";
+  const musicContext = $("music-layer-beat");
+  const soundEffectsContext = $("soundeffects-layer-beat");
+  if (musicContext) musicContext.textContent = beatContext;
+  if (soundEffectsContext) soundEffectsContext.textContent = beatContext;
   updateVisualPlanControls(segment, plan);
 }
 
@@ -70,7 +77,21 @@ function updateVisualPlanControls(segment = currentSegment(), plan = segment?.vi
   else status.textContent = `No plan yet · ${plan.relative_path}`;
 }
 
+function activateLayerTab(tab, moveFocus = false) {
+  const tabs = [...document.querySelectorAll('.layer-tabs [role="tab"]')];
+  for (const item of tabs) {
+    const active = item === tab;
+    item.setAttribute("aria-selected", String(active));
+    item.tabIndex = active ? 0 : -1;
+    item.classList.toggle("active", active);
+    const panel = $(item.getAttribute("aria-controls"));
+    if (panel) panel.hidden = !active;
+  }
+  if (moveFocus) tab.focus();
+}
+
 function activateUtilityTab(tab, moveFocus = false) {
+  activateLayerTab($("tab-script-layer"));
   const tabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
   for (const item of tabs) {
     const active = item === tab;
@@ -1086,20 +1107,25 @@ function bindEvents() {
       renderProject();
     });
   }
-  const utilityTabs = [...document.querySelectorAll('.utility-tabs [role="tab"]')];
-  utilityTabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => activateUtilityTab(tab));
-    tab.addEventListener("keydown", (event) => {
-      let nextIndex = index;
-      if (event.key === "ArrowRight") nextIndex = (utilityTabs.indexOf(tab) + 1) % utilityTabs.length;
-      else if (event.key === "ArrowLeft") nextIndex = (utilityTabs.indexOf(tab) - 1 + utilityTabs.length) % utilityTabs.length;
-      else if (event.key === "Home") nextIndex = 0;
-      else if (event.key === "End") nextIndex = utilityTabs.length - 1;
-      else return;
-      event.preventDefault();
-      activateUtilityTab(utilityTabs[nextIndex], true);
+  const bindTabList = (selector, activateTab) => {
+    const tabs = [...document.querySelectorAll(selector)];
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => activateTab(tab));
+      tab.addEventListener("keydown", (event) => {
+        const index = tabs.indexOf(tab);
+        let nextIndex = index;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = tabs.length - 1;
+        else return;
+        event.preventDefault();
+        activateTab(tabs[nextIndex], true);
+      });
     });
-  });
+  };
+  bindTabList('.layer-tabs [role="tab"]', activateLayerTab);
+  bindTabList('.utility-tabs [role="tab"]', activateUtilityTab);
   ["segment-title", "segment-status", "voice-style", "segment-text"].forEach((id) => $(id).addEventListener("input", () => {
     if (state.playbackActive) $("assembly-audio").pause();
     if (state.sapiSequenceActive) $("sapi-audio").pause();
