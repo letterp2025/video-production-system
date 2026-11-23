@@ -45,74 +45,73 @@ If F5-TTS needs a different Python environment, add `--python 'C:\path\to\f5-tts
 
 When VPS starts for a project, it creates a starter `video_project.json` at this root if one is missing. It is a user- and Codex-facing brief: capture the general idea, creative direction, rough conversational narration outline, inspirations (sample narration, YouTube videos, artists, and other references), and project-status notes. Status fields start as `not_assessed` rather than making assumptions about existing project work. The workbench does not overwrite an existing file or automatically synchronize these notes; edit the JSON as the project evolves. **Project manifest** in the workbench header opens a read-only view of it.
 
-The project root is the folder containing `README.md` and `audio/`. The first project already uses the narration folders shown below. The `visual_layer/`, `audio/music/`, `audio/sfx/`, and `assets/` folders are created when that work is started; they are not prerequisites for drafting or reviewing narration.
+The project root is the folder containing `video_project.json` and `audio/`. The first project already uses the narration folders shown below. Visual takes, project-wide music, and project assets are added as that work begins; they are not prerequisites for drafting or reviewing narration. The workbench creates a starter `video_project.json` when absent, but it does not create every optional layer folder in advance.
 
 ```text
 effectcraft-introduction-01/
-├── video_project.json                # creative brief, inspirations, and status context
-├── README.md                         # project status and links (optional)
-├── SCRIPT.md                         # research/editorial notes (optional)
-├── PRODUCTION_PLAN.md                # broader brief or history (optional)
-├── audio/
-│   ├── narration_manifest.json       # source of truth for segments and narration
-│   ├── segments/                     # generated per-segment narration takes
-│   │   └── <segment-id>_<title-slug>/
-│   │       ├── <segment-id>_take-001.wav
-│   │       └── <segment-id>_take-002.wav
-│   ├── assembled/                    # combined narration review WAVs
-│   ├── performance/                  # generator run receipts
-│   ├── music/                        # optional, one cue map per segment
-│   │   └── <segment-id>.json
-│   ├── sfx/                          # optional, one cue map per segment
-│   │   └── <segment-id>.json
-│   └── visuals/                      # legacy per-segment visual plans only
-│       └── <segment-id>.json
-├── visual_layer/                     # optional whole-video visual takes
-│   ├── selected_take.json            # selects one whole-spine take
-│   ├── v_layer_1.json                # take 1: direction + every segment mapping
-│   ├── v_layer_1/
-│   │   └── <segment-id>/
-│   │       ├── elements/
-│   │       ├── animations/
-│   │       └── scene.js               # example entry; could also be .py, etc.
-│   ├── v_layer_2.json                # take 2: an alternative for the whole video
-│   └── v_layer_2/
-│       └── <segment-id>/             # independent implementation files
-├── assets/                           # project-owned media and source records
-│   └── audio/
-│       ├── music/
-│       └── sfx/
-└── render/                            # required final video output location
-    ├── LOW/                           # optional fast, reduced-quality preview
-    └── HIGH/                          # required final-quality render
+|-- video_project.json                 # creative identity, inspirations, outline, status notes
+|-- README.md                          # project status and links (optional)
+|-- SCRIPT.md                          # research/editorial notes (optional)
+|-- PRODUCTION_PLAN.md                 # broader brief or history (optional)
+|-- audio/
+|   |-- narration_manifest.json        # source of truth for stable segments and approved words
+|   |-- narration_requests/            # optional AI wording requests and result records
+|   |-- segments/                      # generated per-segment narration takes
+|   |-- assembled/                     # combined narration review WAVs
+|   |-- performance/                   # generator run receipts
+|   |-- music/
+|   |   `-- manifest.json              # optional project-wide music items and segment ranges
+|   |-- visuals/                       # retained legacy per-segment visual plans; not current workflow
+|   `-- sfx/                           # retained legacy per-segment SFX plans; not current workflow
+|-- visual_layer/
+|   |-- selected_take.json             # selects one whole-spine visual direction
+|   |-- v_layer_1.json                 # take direction + stable-ID segment/request index
+|   `-- v_layer_1/
+|       `-- segments/
+|           `-- <stable-segment-id>/
+|               `-- requests/
+|                   `-- VIS-001/       # each request is a separate visual attempt
+|                       |-- request.json # preserved brief + optional library references
+|                       |-- result.json  # status + validated output paths
+|                       |-- sfx.json     # optional SFX plan for this visual candidate
+|                       |-- implementation/ # project-owned element/animation source
+|                       `-- exports/    # preview and segment export, when created
+|-- assets/                            # optional project-owned media and source records
+|   `-- audio/
+|       |-- music/
+|       `-- sfx/
+`-- render/                            # final video rendered by the chosen production tool/NLE
+    |-- LOW/                           # optional fast, reduced-quality preview
+    `-- HIGH/                          # required final-quality render
 ```
 
-The exact project may contain fewer folders or additional tool-specific files. The narration generator creates segment takes, assembled review files, and performance receipts as needed. `audio/.workbench/` is local workbench state; leave it under the project rather than treating it as an editorial manifest. `audio/visuals/` is a retained older per-segment plan format. New visual work uses the project-root `visual_layer/` structure.
+This is an illustrative layout, not a list of folders VPS pre-creates. A project may contain fewer folders or additional tool-specific files. The narration generator creates audio takes, assembled review files, and performance receipts as needed. `audio/.workbench/` is temporary review state, not an editorial manifest. The old `audio/visuals/`, per-segment `audio/music/<segment-id>.json`, and `audio/sfx/<segment-id>.json` formats are legacy; VPS leaves existing files untouched but the current UI does not use them. New visual requests live under project-root `visual_layer/`; project-wide music lives at `audio/music/manifest.json`.
 
 | Layer | Source of truth | What it contains |
 |---|---|---|
-| Script and narration | `audio/narration_manifest.json` | Stable segment IDs, spoken order and text, voice settings, and selected narration takes. Generated WAV takes and assembled review files stay under `audio/`. |
-| Visual | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and referenced project files | Each take describes a visual direction for the whole narration spine and maps every segment ID to its intent and implementation. Element and animation files are normally created for this video. |
-| Music | `audio/music/<segment-id>.json` | Optional cue list for that segment, pointing to project-relative audio assets. |
-| Sound effects | `audio/sfx/<segment-id>.json` | Optional cue list for that segment, pointing to project-relative audio assets. |
+| Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable segment IDs, spoken order and approved text, voice settings, selected narration takes, and separate AI request/result records for wording suggestions. |
+| Visual and candidate SFX | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and `visual_layer/<take-id>/segments/<segment-id>/requests/<request-id>/` | A take describes one direction across the full narration spine. Each segment can keep multiple independent visual requests; request/result JSON track the brief and handoff, with implementation and exported segment assets owned by the project. Optional SFX planning belongs to the visual candidate it supports. |
+| Music | `audio/music/manifest.json` | One project-wide list. Each item starts at the beginning of its `start_segment_id` and ends at the end of its `end_segment_id`; optional asset paths refer to project files. |
+| Project identity and direction | `video_project.json` | User- and AI-facing creative brief, rough narration outline, inspirations, and manually maintained project-status context. |
+| Final video | Chosen NLE/production-tool project and `render/HIGH/` output | The NLE or production renderer assembles, mixes, and renders; VPS prepares assets and planning handoff information rather than acting as an NLE. |
 
 ## Continue from narration into the other layers
 
 ### Visual Layer: alternatives for the whole narration spine
 
-Create a visual take when you are ready to explore how the video should look. A take applies across the whole narration spine, even though its JSON has a separate entry for each segment. For example, `v_layer_1` could try a retro treatment across the video, while `v_layer_2` tries a different overall treatment and gives one segment a distinctive variation. Selecting a take selects that complete alternative for the spine; it does not select a different take beat by beat.
+Create a visual take when you are ready to explore how the video should look. A take is one alternative direction across the whole narration spine. For example, `v_layer_1` could try a retro treatment across the video, while `v_layer_2` tries a different overall treatment. Within a take, each segment can have repeated visual requests (`VIS-001`, `VIS-002`, …), so you can explore or revise that segment without replacing earlier attempts or creating another whole-video take. The take manifest tracks segment requests and which completed candidate is selected for each segment.
 
-Each take manifest combines the creative direction with the map to its implementation. Its segment entries use the stable IDs from `audio/narration_manifest.json` and can point to custom EffectCraft, Manim, or GSAP files and folders. Most elements and animations can be made specifically for the current video; library entries are optional. There is no required separate planning JSON before creating the elements. The selected pointer is only selection state; it is not another take.
+Each take manifest combines the creative direction with an index keyed by stable narration IDs. A request can be a custom brief with no library dependency, or optionally reference items from the read-only Visual Library Browser and include a note for each. The implementation is usually created specifically for this video and may use the renderer best suited to it. The request JSON is the brief and handoff; the paired result JSON records progress and output references. The selected-take pointer is only selection state, not another take.
 
-The workbench scaffolds a pending entry for each current segment and opens the manifest in your default editor. It checks the JSON and project-relative references, but it does not run renderer code or render the video. See the [Segment Layers and Workbench Layout task order](../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the manifest contract and an expanded take example.
+In **Visual Layer**, select or create a take, select a segment by its stable ID, and add a visual request. VPS creates that request's `request.json` brief and `result.json` scaffold under the project. Use terminal Codex (or another AI assistant) to read the request, create the implementation and segment export, and update the paired result. Refresh the workbench to see its status. VPS never auto-launches Codex or executes renderer code. The Visual Library Browser is optional and read-only; it contributes references and notes to the request, not copied or executed library code. See the [Visual Layer guide](../tools/audio_narration_generator/README.md#whole-spine-visual-takes) and [Segment Layers and Workbench Layout task order](../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the full workflow.
 
-### Music and SoundEffects: cue maps per segment
+The v2 result record preserves the take ID, segment ID, request ID, and source-text hash from its scaffold. Keep status current (`requested`, `in_progress`, `completed`, or `failed`) and update `updated_at`; completed work also needs `completed_at` and an existing exported segment file. `implementation_path`, `preview_path`, and `export_path` must be project-relative, remain inside that request folder, and point to existing outputs (implementation may be a file or folder; preview and export are files). A completed candidate can be selected only when its export validates and its source-text hash still matches the narration. The UI surfaces invalid records and legacy v1 results; new requests always use v2. See [`visual_result.schema.json`](../tools/audio_narration_generator/visual_result.schema.json) and the [detailed contract and example](../tools/audio_narration_generator/README.md#whole-spine-visual-takes).
 
-Music and SFX are optional and stored separately from the narration and visual manifests. Each segment can have its own music cue file, SFX cue file, both, or neither. The JSON cue list points to audio files in the project and records when they should begin relative to that narration segment. Codex can choose from available project assets and fill in the mappings when asked; you do not need to hand-design the JSON.
+### Project-wide music and candidate-specific sound effects
 
-The workbench currently creates, opens, and reports the status of these files. It does not search for music, download assets, play cues, or mix audio. Use Asset Finder separately when sourcing is needed, and review the source and usage terms for outside assets. Keep downloaded media and its neighboring `.asset.json` receipt with the video project. A receipt records source metadata; it does not itself establish usage rights. See the [Asset Finder guide](../tools/asset_finder/README.md).
+Music is project-wide, not a separate cue map per segment. The **Music Layer** creates or opens `audio/music/manifest.json`. Each item names its start and end segment by stable ID: playback is intended to begin at the start of the first segment and end after the last segment. The UI resolves and displays current segment titles alongside those IDs. The manifest is simple planning/mapping data; it does not itself acquire, play, mix, or render audio. Codex can help choose music and maintain the JSON when asked.
 
-These are per-segment maps, not a single project-wide music timeline. Reusing the same music asset in several segment files is possible, but continuous playback, fades, crossfades, overlap rules, and final audio mixing are not defined by the current workbench.
+Sound effects are optional and attached to a visual request as that candidate's `sfx.json`, keeping the effect plan beside the visual it supports. Detailed cue timing, sourcing, playback, and mixing remain outside the current workbench. When sourcing is needed, use Asset Finder separately, keep media and its neighboring `.asset.json` receipt with the project, and review outside-asset usage terms. A receipt records source metadata; it does not itself establish usage rights. See the [Asset Finder guide](../tools/asset_finder/README.md).
 
 ### Render and review
 

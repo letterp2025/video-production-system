@@ -147,7 +147,7 @@ The Music manifest is a small data file, for example:
 
 `asset_path` and `notes` can be omitted while the choice is still being explored. Segment titles are intentionally not duplicated in this file: VPS resolves the current title from each stable ID in `audio/narration_manifest.json` and shows both together.
 
-The filenames above are illustrative. `selected_take.json` stores the selected manifest filename; it is selection state, not another take. Each request is an independent attempt for one stable narration ID. The workbench creates take/request/result scaffolds and optional SFX JSON; terminal Codex creates project-owned implementation and export files and records their project-relative paths in `result.json`. VPS never runs the renderer. Request outputs may be stored anywhere inside the project, provided the result JSON points to them using project-relative paths.
+The filenames above are illustrative. `selected_take.json` stores the selected manifest filename; it is selection state, not another take. Each request is an independent attempt for one stable narration ID. The workbench creates take/request/result scaffolds and optional SFX JSON; terminal Codex creates project-owned implementation and export files and records their project-relative paths in `result.json`. Every referenced output must already exist and stay inside that specific request folder; this keeps candidate outputs isolated and lets VPS validate them without following paths into other project areas. VPS never runs the renderer.
 
 ### Target project layout (conceptual)
 
