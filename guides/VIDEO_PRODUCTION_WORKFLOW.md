@@ -13,7 +13,7 @@ Use the same approach for a new project:
 3. Review the sequence for missing ideas, repetition, accuracy, and a natural spoken voice. Revise one segment or a group of related segments at a time. Reordering a segment does not change its ID.
 4. Use VPS to listen. **Preview SAPI fast** is a quick wording and pacing check on supported Windows systems. **Build + play F5-TTS** generates or reuses the configured F5-TTS takes, assembles the selected narration, and plays it from the selected segment.
 5. Listen to individual lines for pronunciation and delivery, then listen to the assembled narration for flow and runtime. Adjust the words and listen again. Select the take you want for assembly in each segment; the manifest records that selection, while ratings and notes record how alternate takes sounded.
-6. When the narration is clear enough to carry the story, save that as the current milestone. You can begin visuals and sound later, once the spoken spine is stable enough to guide them.
+6. When the narration is clear enough to carry the story, save that as the current milestone. You can begin visuals and sound later, once the spoken spine is stable enough to guide them. This is a valid work-in-progress checkpoint; a finished video still needs its final HIGH render.
 
 The exact spoken words and segment order belong in `audio/narration_manifest.json`. A separate `SCRIPT.md` or `PRODUCTION_PLAN.md` can hold editorial notes, research, or a broader brief, but it is not a second source of truth for the words being generated.
 
@@ -77,9 +77,9 @@ effectcraft-introduction-01/
 │   └── audio/
 │       ├── music/
 │       └── sfx/
-└── render/                            # optional review and delivery exports
-    ├── LOW/
-    └── HIGH/
+└── render/                            # required final video output location
+    ├── LOW/                           # optional fast, reduced-quality preview
+    └── HIGH/                          # required final-quality render
 ```
 
 The exact project may contain fewer folders or additional tool-specific files. The narration generator creates segment takes, assembled review files, and performance receipts as needed. `audio/.workbench/` is local workbench state; leave it under the project rather than treating it as an editorial manifest. `audio/visuals/` is a retained older per-segment plan format. New visual work uses the project-root `visual_layer/` structure.
@@ -111,7 +111,14 @@ These are per-segment maps, not a single project-wide music timeline. Reusing th
 
 ### Render and review
 
-After the narration and the visual/audio assets are ready, render through the selected production tool's workflow. The VPS workbench currently organizes the narration and stores visual and audio mappings; it does not assemble renderer code, music, and SFX into a finished video. Keep review exports separate from delivery-quality exports, watch and listen to the full result, and revise the relevant project files before making a final render.
+Rendering the final video is a required production stage. Keep the `render/` folder in the project. Use its two quality tiers for different jobs:
+
+- **LOW is optional.** It is a fast, reduced-quality preview for checking composition, text readability, timing, and broad visual/audio issues. Make a LOW render when that review will help; revise the project and preview again as needed.
+- **HIGH is required for a finished video.** It is the final-quality export and may take substantially longer to render. Once the content and preview are approved, create the HIGH render and review that output. The HIGH file is the final video deliverable; a LOW preview alone does not finish the project.
+
+Keep tier names and filename suffixes aligned, such as `render/LOW/scene_short-description_low.mp4` and `render/HIGH/scene_short-description_high.mp4`. Follow the selected renderer's guide for quality settings and export steps. For example, the [EffectCraft Section Renderer guide](../tools/effectcraft_ffmpeg_sections/README.md) writes output to the requested tier.
+
+The VPS workbench currently organizes the narration and stores visual and audio mappings; it does not assemble renderer code, music, and SFX into a finished video. Render through the selected production tool, watch and listen to the output, and revise the project if review finds issues. The final HIGH export belongs in the project's `render/HIGH/` folder.
 
 ## Review checkpoints
 
