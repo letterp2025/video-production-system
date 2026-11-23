@@ -76,6 +76,12 @@ The preview process sends text only to the local Windows speech API. It does not
 
 The local workbench is a browser interface around `narration_manifest.json` and this generator. It does not create another script source or take system.
 
+### Segment layers
+
+A segment (called a **beat** in the workbench) is the stable unit that ties four production layers together: **script text and narration audio**, **visual**, **music**, and **SFX**. The manifest's segment ID and spoken order are the shared identity and sequence. A layer can be empty; adding music or SFX must not change the spoken words or regenerate a narration take.
+
+Today, approved text, narration settings, and selected takes live in `audio/narration_manifest.json`; optional visual planning lives in `audio/visuals/<segment-id>.json`. Music and SFX mappings are **planned, not implemented**. They will be separate project-local JSON files keyed by the same segment ID, referencing reviewed audio assets kept with the video project. Creating a mapping will not download assets, mix audio, or render video. See the [segment layers and workbench layout task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the proposed storage, controls, and acceptance checks.
+
 ### Start it
 
 From the public repository root, select one project's manifest and start the server:
