@@ -2,6 +2,8 @@
 
 GSAP (GreenSock Animation Platform) is a JavaScript animation engine for sequencing changes to DOM and SVG properties and ordinary JavaScript objects, which can in turn drive canvas drawing. For the Video Production System (VPS), treat GSAP as a way to author and control motion. GSAP does not create a video project, render an MP4, or replace the current EffectCraft and FFmpeg workflows.
 
+GSAP code can be organized in the same reusable entry folders as the visual element and animation libraries. Use a `.js` file for the GSAP timeline; include a small HTML/CSS host when the scene needs a browser. Python is also welcome for a separate Manim implementation or a capture/orchestration script, but the GSAP animation itself remains JavaScript.
+
 This guide describes a study and adaptation path. The VPS does not currently include a browser-based GSAP frame renderer.
 
 ## What to study
@@ -83,6 +85,31 @@ FFmpeg encodes the sequence and optionally muxes audio
 
 The current VPS video renderer is built around EffectCraft CLI frame renders and FFmpeg section encoding. There is no GSAP or browser-frame capture tool in the repository yet. Until such a renderer is implemented and reviewed, treat GSAP work as a study or prototype, or translate suitable motion recipes into EffectCraft or another supported renderer.
 
+## Organize a reusable element or animation
+
+Use the [Visual Elements Library](../libraries/visual_elements_library/README.md) when the reusable item is primarily a visual building block, such as a title treatment, badge, diagram component, or graphic. Use the [Visual Animations Library](../libraries/visual_animations_library/README.md) when the reusable item is primarily choreography, such as an entrance, reveal, transition, or multi-element sequence. An animation recipe can reference one or more `ELM-...` entries instead of duplicating their design notes.
+
+Keep the cross-tool recipe in `NOTES.md` and put runnable, tool-specific source under `code/`. A GSAP implementation can be arranged like this:
+
+```text
+ANM-title-slide-reveal/
+  NOTES.md
+  code/
+    gsap/
+      README.md       # run instructions, GSAP version, browser/runtime
+      scene.js        # element setup and GSAP timeline
+      index.html      # optional browser host
+      styles.css      # optional layout and typography
+      package.json    # optional, if using npm
+      package-lock.json
+  project/            # optional local project or render work; ignored
+  preview/            # optional local visual checks; ignored
+```
+
+For a small animation, one `.js` file under `code/gsap/` can hold the full recipe and run inside a shared browser shell; add HTML, CSS, assets, and dependency files only when the implementation needs them. Group implementations by tool when an entry has more than one, for example `code/gsap/` and `code/manim/`. Keep the notes focused on shared intent, targets, timing, easing, and reusable parameters so another implementation can follow the same recipe.
+
+If the reusable item is an element rather than choreography, use the matching `ELM-<slug>/` entry and the same `code/gsap/` convention. Keep its visual structure and style variants in the element notes; put reusable movement in an `ANM-<slug>/` entry when that movement is useful independently.
+
 ## Add a reusable VPS recipe
 
 Use the existing [Visual Animations Library](../libraries/visual_animations_library/README.md) for reusable motion recipes. Follow its [`ANIMATION_TEMPLATE.md`](../libraries/visual_animations_library/ANIMATION_TEMPLATE.md) and add a tool-specific implementation under the recipe's `code/` directory when the recipe is concrete enough to reuse.
@@ -90,7 +117,7 @@ Use the existing [Visual Animations Library](../libraries/visual_animations_libr
 For a GSAP-based entry:
 
 - State clearly that the implementation uses GSAP and record the package version.
-- Keep the shared motion idea separate from the HTML, SVG, Canvas, or browser-specific implementation.
+- Keep the shared motion idea separate from the HTML, SVG, Canvas, or browser-specific implementation; place GSAP source in a tool-specific folder such as `code/gsap/`.
 - Document parameters, dimensions, frame rate, duration, dependencies, and any renderer assumptions.
 - Mark the recipe `Draft` until the output has been rendered and visually reviewed.
 - Keep render output, local projects, downloaded media, and other working files out of the public library.
