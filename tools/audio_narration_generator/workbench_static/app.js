@@ -28,6 +28,77 @@ function escapeText(value) { return String(value ?? ""); }
 function currentSegment() { return state.project?.segments.find((item) => item.id === state.selectedId); }
 function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
 
+function manifestLabel(key) {
+  const acronyms = { id: "ID", nle: "NLE", sfx: "SFX", tts: "TTS", url: "URL", json: "JSON" };
+  return String(key).split("_").map((part) => acronyms[part.toLowerCase()] || part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function appendManifestValue(parent, key, value, depth = 0) {
+  if (value === null || typeof value !== "object") {
+    const row = document.createElement("div");
+    row.className = "project-manifest-field";
+    const label = document.createElement("span");
+    label.textContent = manifestLabel(key);
+    const content = document.createElement("p");
+    content.textContent = value === null ? "Not set" : value === "" ? "Not provided yet" : String(value);
+    row.append(label, content);
+    parent.append(row);
+    return;
+  }
+
+  const group = document.createElement("section");
+  group.className = depth === 0 ? "project-manifest-group" : "project-manifest-group project-manifest-group--nested";
+  const heading = document.createElement(depth === 0 ? "h2" : "h3");
+  heading.textContent = manifestLabel(key);
+  group.append(heading);
+
+  const entries = Array.isArray(value) ? value.map((item, index) => [`Item ${index + 1}`, item]) : Object.entries(value);
+  if (entries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "project-manifest-empty";
+    empty.textContent = Array.isArray(value) ? "No entries yet." : "No details recorded.";
+    group.append(empty);
+  } else {
+    for (const [childKey, childValue] of entries) appendManifestValue(group, childKey, childValue, depth + 1);
+  }
+  parent.append(group);
+}
+
+function renderProjectManifest(container, manifest) {
+  container.replaceChildren();
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    container.textContent = "The project manifest does not contain a JSON object.";
+    return;
+  }
+  const entries = Object.entries(manifest);
+  if (entries.length === 0) {
+    container.textContent = "The project manifest is empty.";
+    return;
+  }
+  for (const [key, value] of entries) appendManifestValue(container, key, value);
+}
+
+async function openProjectManifest() {
+  const dialog = $("project-manifest-dialog");
+  const content = $("project-manifest-content");
+  const location = $("project-manifest-location");
+  dialog.showModal();
+  content.replaceChildren();
+  content.className = "project-manifest-content";
+  content.setAttribute("aria-busy", "true");
+  content.textContent = "Loading the project manifest…";
+  try {
+    const result = await request("/api/project-manifest");
+    location.textContent = `${result.relative_path} · Read only`;
+    renderProjectManifest(content, result.manifest);
+  } catch (error) {
+    location.textContent = "Project root · Read only";
+    content.textContent = error.message;
+  } finally {
+    content.setAttribute("aria-busy", "false");
+  }
+}
+
 function renderLayerPanels(segment) {
   const position = segment ? String(segment.position).padStart(2, "0") : null;
   $("shared-narration-position").textContent = segment
@@ -1363,6 +1434,8 @@ async function clearResolved() {
 
 function bindEvents() {
   $("visual-take-select").addEventListener("change", selectVisualTake);
+  $("open-project-manifest").addEventListener("click", openProjectManifest);
+  $("close-project-manifest").addEventListener("click", () => $("project-manifest-dialog").close());
   $("create-visual-take").addEventListener("click", createVisualTake);
   $("open-visual-take").addEventListener("click", openVisualTake);
   $("create-visual-request").addEventListener("click", createVisualRequest);

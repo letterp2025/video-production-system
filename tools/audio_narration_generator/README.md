@@ -84,6 +84,8 @@ Approved text, narration settings, and selected narration takes live in `audio/n
 
 The selected-segment workspace has three top-level tabs: **Script and Narration Layer**, **Visual Layer**, and **Music Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. Visual Layer holds visual requests and optional candidate-specific SFX JSON. The previous per-segment SFX mapping and visual-plan panels are no longer shown. Music is project-wide, and each item's start and end anchors display both the stable narration ID and current segment title. See the [segment layers task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
 
+Use **Project manifest** in the header to open a read-only modal showing all fields from the selected video's root `video_project.json`. This is the project brief for its idea, creative direction, inspiration, rough narration outline, and status; it does not replace the detailed layer manifests.
+
 ### Start it
 
 From the public repository root, select one project's manifest and start the server:

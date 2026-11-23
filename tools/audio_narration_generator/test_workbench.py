@@ -497,6 +497,7 @@ class HttpTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
+        self.root = root
         audio = root / "audio"
         audio.mkdir()
         self.manifest = audio / "narration_manifest.json"
@@ -524,6 +525,46 @@ class HttpTest(unittest.TestCase):
         encoded = json.dumps(payload)
         self.assertNotIn("ref.wav", encoded)
         self.assertNotIn("ref words", encoded)
+
+    def test_project_manifest_api_returns_the_read_only_root_document(self):
+        manifest_path = self.root / "video_project.json"
+        manifest = {
+            "project_id": "http-test",
+            "project_idea": {"summary": "A test project."},
+            "inspiration": {"narration_samples": [], "video_references": [{"title": "Example"}]},
+        }
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        original = manifest_path.read_bytes()
+
+        with urlopen(self.base + "/api/project-manifest") as response:
+            payload = json.loads(response.read())
+
+        self.assertEqual(payload, {"relative_path": "video_project.json", "manifest": manifest})
+        self.assertEqual(manifest_path.read_bytes(), original)
+
+    def test_project_manifest_api_reports_missing_or_invalid_root_documents(self):
+        with self.assertRaises(HTTPError) as missing:
+            urlopen(self.base + "/api/project-manifest")
+        self.assertEqual(missing.exception.code, 404)
+        self.assertIn("No video_project.json", missing.exception.read().decode("utf-8"))
+
+        (self.root / "video_project.json").write_text("{not-json", encoding="utf-8")
+        with self.assertRaises(HTTPError) as invalid:
+            urlopen(self.base + "/api/project-manifest")
+        self.assertEqual(invalid.exception.code, 422)
+
+    def test_project_manifest_api_rejects_symlinks(self):
+        outside = self.root.parent / f"{self.root.name}-outside.json"
+        outside.write_text('{"private": true}', encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        try:
+            (self.root / "video_project.json").symlink_to(outside)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"Symlinks are unavailable: {exc}")
+
+        with self.assertRaises(HTTPError) as escaped:
+            urlopen(self.base + "/api/project-manifest")
+        self.assertEqual(escaped.exception.code, 403)
 
     def test_visual_plan_routes_create_and_open_only_the_selected_project_file(self):
         manifest_hash = self.project.state_payload()["manifest_hash"]

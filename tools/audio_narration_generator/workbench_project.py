@@ -68,6 +68,34 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
             raise WorkbenchError(f"Manifest validation failed: {exc}") from exc
         return data, digest
 
+    def project_manifest_payload(self) -> dict[str, Any]:
+        """Read the optional project-root brief without exposing other project files."""
+        project_root = self.audio_root.parent.resolve(strict=True)
+        path = project_root / "video_project.json"
+        try:
+            if path.is_symlink():
+                raise WorkbenchError("The project manifest cannot be a symlink.", 403)
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(project_root)
+            if not resolved.is_file():
+                raise WorkbenchError("The project manifest is not a file.", 404)
+            raw = resolved.read_bytes()
+        except FileNotFoundError as exc:
+            raise WorkbenchError("No video_project.json was found at the selected project's root.", 404) from exc
+        except WorkbenchError:
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise WorkbenchError("The project manifest could not be read safely.", 403) from exc
+        try:
+            manifest = json.loads(raw.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise WorkbenchError("The root video_project.json is not valid UTF-8.", 422) from exc
+        except json.JSONDecodeError as exc:
+            raise WorkbenchError("The root video_project.json is not valid JSON.", 422) from exc
+        if not isinstance(manifest, dict):
+            raise WorkbenchError("The root video_project.json must contain a JSON object.", 422)
+        return {"relative_path": "video_project.json", "manifest": manifest}
+
     def read_state(self) -> dict[str, Any]:
         if not self.work_path.exists():
             return {"schema_version": 1, "updated_at": now_iso(), "segments": {}}

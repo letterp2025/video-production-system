@@ -220,6 +220,8 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._send_file(path, content_type)
                 elif self.path == "/api/state":
                     self._json(200, project.state_payload())
+                elif self.path == "/api/project-manifest":
+                    self._json(200, project.project_manifest_payload())
                 elif self.path == "/api/library/entries":
                     self._json(200, {"entries": project.catalog.entries(), "private_available": "private" in project.catalog.roots})
                 elif self.path.startswith("/api/library/entry?"):

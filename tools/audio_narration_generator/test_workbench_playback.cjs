@@ -17,7 +17,7 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes, renderVisualPlanner })", context);
+  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes, renderProjectManifest })", context);
 }
 
 test("every direct DOM reference exists in the workbench markup", () => {
@@ -28,48 +28,50 @@ test("every direct DOM reference exists in the workbench markup", () => {
   assert.deepEqual([...refs].filter((id) => !ids.has(id)).sort(), []);
 });
 
-test("visual planning replaces the provider badge without removing Codex suggestions", () => {
+test("Visual Layer uses whole-video takes and segment requests, not the retired recipe panel", () => {
   const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
   const script = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
-  assert.match(html, /id="visual-recipe"/);
-  assert.match(html, /id="create-visual-plan"[^>]*>Create visual JSON/);
-  assert.match(html, /id="open-visual-plan"[^>]*>Open JSON/);
-  assert.doesNotMatch(html, /id="provider-state"|Codex CLI found/);
-  assert.match(html, /id="ask-codex"/);
-  assert.match(script, /\/api\/visuals\/create/);
-  assert.match(script, /\/api\/visuals\/open/);
+  assert.match(html, /id="visual-take-select"/);
+  assert.match(html, /id="create-visual-take"/);
+  assert.match(html, /id="visual-request-brief"/);
+  assert.match(html, /id="create-visual-request"[^>]*>Create request JSON/);
+  assert.match(script, /\/api\/visual-takes\/create/);
+  assert.match(script, /\/api\/visual-requests\/create/);
+  assert.doesNotMatch(html, /id="visual-recipe"|id="create-visual-plan"/);
 });
 
-test("visual selector follows the selected beat and locks after a plan exists", () => {
-  function node() {
+test("project manifest control opens a read-only viewer for the root JSON", () => {
+  const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
+  const script = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
+  assert.match(html, /id="open-project-manifest"[^>]*>Project manifest<\/button>/);
+  assert.match(html, /id="project-manifest-dialog"[^>]*aria-labelledby="project-manifest-heading"/);
+  assert.match(html, /id="project-manifest-content"[^>]*aria-busy="false"/);
+  assert.match(script, /request\("\/api\/project-manifest"\)/);
+  assert.match(script, /dialog\.showModal\(\)/);
+});
+
+test("project manifest viewer renders nested values as text and marks empty sections", () => {
+  function node(tagName) {
     return {
-      children: [],
-      replaceChildren() { this.children = []; },
+      tagName, children: [], textContent: "", className: "",
       append(...children) { this.children.push(...children); },
-      addEventListener() {},
-      get options() { return this.children; },
+      replaceChildren() { this.children = []; this.textContent = ""; },
     };
   }
-  const elements = {
-    "visual-recipe": node(), "create-visual-plan": node(),
-    "open-visual-plan": node(), "visual-plan-status": node(),
-    "visual-beat-label": node(),
-  };
-  const { state, renderVisualPlanner } = loadWorkbench(elements, { createElement: node });
-  state.project = { visual_recipes: [{ id: "ANM-reveal", title: "Reveal" }] };
-  renderVisualPlanner({ id: "first-beat", position: 1, visual_plan: { status: "none", relative_path: "visuals/first-beat.json", exists: false, can_open: false } });
-  assert.match(elements["visual-beat-label"].textContent, /beat 01 · first-beat/);
-  assert.deepEqual(elements["visual-recipe"].children.map((option) => option.value), ["", "ANM-reveal"]);
-  assert.match(elements["visual-plan-status"].textContent, /No plan yet/);
-  renderVisualPlanner({
-    id: "second-beat", position: 2,
-    visual_plan: { status: "saved", relative_path: "visuals/second-beat.json", exists: true, can_open: true, recipe_id: "ANM-reveal", recipe_title: "Reveal" },
+  const container = node("div");
+  const { renderProjectManifest } = loadWorkbench({}, { createElement: node });
+  renderProjectManifest(container, {
+    project_id: "test-video",
+    creative_direction: { tone_and_voice: ["Relaxed"], avoid: [] },
+    inspiration: { video_references: [{ title: "A reference", notes: "<script> stays text" }] },
   });
-  assert.match(elements["visual-beat-label"].textContent, /beat 02 · second-beat/);
-  assert.equal(elements["visual-recipe"].value, "ANM-reveal");
-  assert.equal(elements["visual-recipe"].disabled, true);
-  assert.equal(elements["create-visual-plan"].disabled, true);
-  assert.equal(elements["open-visual-plan"].hidden, false);
+  const collect = (element) => [element.textContent, ...element.children.flatMap(collect)].join(" ");
+  const text = collect(container);
+  assert.match(text, /test-video/);
+  assert.match(text, /Relaxed/);
+  assert.match(text, /A reference/);
+  assert.match(text, /<script> stays text/);
+  assert.match(text, /No entries yet/);
 });
 
 test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {

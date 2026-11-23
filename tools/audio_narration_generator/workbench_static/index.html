@@ -34,6 +34,7 @@
       </label>
       <span id="playback-status" class="playback-status" role="status" aria-live="polite"></span>
     </div>
+    <button id="open-project-manifest" class="project-manifest-button" type="button" aria-haspopup="dialog" aria-controls="project-manifest-dialog">Project manifest</button>
   </header>
 
   <main class="layout">
@@ -303,6 +304,19 @@
         <button id="save-insert-beat" class="button button-ink" type="submit">Add beat after</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="project-manifest-dialog" class="project-manifest-dialog" aria-labelledby="project-manifest-heading">
+    <div class="project-manifest-shell">
+      <header class="project-manifest-dialog-header">
+        <div>
+          <p class="section-kicker">PROJECT BRIEF</p>
+          <h2 id="project-manifest-heading">Project manifest</h2>
+          <p id="project-manifest-location">video_project.json · Read only</p>
+        </div>
+        <button id="close-project-manifest" class="button button-outline" type="button">Close</button>
+      </header>
+      <div id="project-manifest-content" class="project-manifest-content" role="region" aria-label="Project manifest contents" aria-busy="false"></div>
+    </div>
   </dialog>
 </body>
 </html>

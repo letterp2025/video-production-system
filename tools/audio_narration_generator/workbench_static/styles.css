@@ -48,6 +48,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .playback-status { max-width: 200px; color: var(--muted); font-size: 10px; line-height: 1.25; }
 .preview-volume { display: grid; gap: 3px; min-width: 104px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .preview-volume input { width: 104px; accent-color: var(--cyan); cursor: pointer; }
+.project-manifest-button { flex: 0 0 auto; min-height: 40px; margin-left: auto; padding: 0 12px; border: 1px solid var(--ink); background: var(--sheet); box-shadow: 2px 2px 0 var(--cyan); font-size: 11px; font-weight: 750; white-space: nowrap; }
+.project-manifest-button:hover { background: var(--soft-cyan); }
 
 .layout { flex: 1 1 auto; display: grid; grid-template-columns: 265px minmax(0, 1fr); min-height: 0; max-width: 1800px; width: 100%; overflow: hidden; margin: 0 auto; }
 .sequence-panel, .editor-panel, .review-panel, .layer-workspace, .layer-tab-panel { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
@@ -242,6 +244,26 @@ audio { width: 100%; height: 34px; }
 .insert-beat-dialog textarea { min-height: 125px; resize: vertical; }
 .insert-beat-error { margin: 14px 0 0; color: #a72f28; font-size: 12px; font-weight: 700; }
 .insert-beat-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+.project-manifest-dialog { width: min(900px, calc(100vw - 32px)); height: min(780px, calc(100dvh - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: hidden; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 8px 8px 0 var(--cyan); }
+.project-manifest-dialog::backdrop { background: rgb(0 0 0 / .5); }
+.project-manifest-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; }
+.project-manifest-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 22px; border-bottom: 1px solid var(--ink); background: var(--sheet); }
+.project-manifest-dialog-header .section-kicker { margin: 0 0 3px; }
+.project-manifest-dialog-header h2 { margin: 0; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif; font-size: 26px; letter-spacing: -.04em; }
+.project-manifest-dialog-header p:last-child { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
+.project-manifest-content { min-height: 0; overflow: auto; padding: 8px clamp(18px, 4vw, 44px) 30px; overscroll-behavior: contain; }
+.project-manifest-content[aria-busy="true"] { display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.project-manifest-content > p { margin: 20px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.project-manifest-group { padding: 17px 0; border-bottom: 1px solid var(--line); }
+.project-manifest-group--nested { margin-left: 12px; padding: 10px 0 8px 14px; border-bottom: 0; border-left: 2px solid var(--line); }
+.project-manifest-group h2, .project-manifest-group h3 { margin: 0 0 10px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif; letter-spacing: -.025em; }
+.project-manifest-group h2 { font-size: 21px; }
+.project-manifest-group h3 { font-size: 16px; }
+.project-manifest-field { display: grid; grid-template-columns: minmax(145px, 210px) minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid rgb(216 217 213 / .75); }
+.project-manifest-field:last-child { border-bottom: 0; }
+.project-manifest-field > span { color: #536465; font-size: 11px; font-weight: 750; }
+.project-manifest-field > p { min-width: 0; margin: 0; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-manifest-empty { margin: 0; color: var(--muted); font-size: 11px; font-style: italic; }
 
 .review-head { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .review-head h2 { font-size: 28px; line-height: 1; }
@@ -279,6 +301,7 @@ audio { width: 100%; height: 34px; }
 
 @media (max-width: 1120px) {
   .topbar { flex-wrap: wrap; gap: 8px 18px; }
+  .project-manifest-button { order: 2; }
   .header-playback { order: 3; width: 100%; }
   .layout { grid-template-columns: 230px minmax(0, 1fr); }
   .layer-tabs { padding-right: 8px; padding-left: 8px; }
@@ -299,6 +322,7 @@ audio { width: 100%; height: 34px; }
   .mark { width: 31px; height: 31px; }
   .project-head { display: none; }
   .header-playback { flex-wrap: wrap; }
+  .project-manifest-button { min-height: 36px; padding: 0 9px; font-size: 10px; }
   .header-playback-button { min-width: 0; flex: 1 1 145px; }
   .preview-volume { flex: 0 0 104px; }
   .playback-status { max-width: none; width: 100%; }
@@ -323,6 +347,11 @@ audio { width: 100%; height: 34px; }
   .layer-content { padding: 27px 18px 42px; }
   .layer-heading .position-label { margin-bottom: 24px; }
   .footer-line { padding: 11px 15px; font-size: 9px; }
+  .project-manifest-dialog { width: calc(100vw - 20px); height: calc(100dvh - 20px); max-height: calc(100vh - 20px); }
+  .project-manifest-dialog-header { align-items: flex-start; padding: 13px 14px; }
+  .project-manifest-dialog-header h2 { font-size: 23px; }
+  .project-manifest-content { padding: 4px 14px 22px; }
+  .project-manifest-field { grid-template-columns: 1fr; gap: 3px; }
 }
 @media (max-width: 420px) {
   .layer-tabs { grid-template-columns: 1fr; }
