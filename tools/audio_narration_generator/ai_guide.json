@@ -27,12 +27,13 @@
       "The selected segment's spoken text",
       "The creator's note for that segment",
       "The immediately preceding and following segment text when present",
+      "The full root video_project.json, including its idea, creative direction, outline, project status, inspirations, and user-added context",
       "This generic AI guide"
     ],
     "never_include": [
       "Voice-reference audio or its transcript",
       "Absolute project paths or local machine details",
-      "The full manifest or unrelated segments",
+      "audio/narration_manifest.json or unrelated narration segments",
       "Generated audio, takes, receipts, or performance records"
     ]
   }

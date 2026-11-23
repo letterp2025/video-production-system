@@ -193,9 +193,95 @@ audio/
                 └── result.json
 ```
 
-`request.json` is created by VPS and should be treated as the preserved brief. Its `project_context` contains the full root `video_project.json` so the AI sees the project idea, direction, narration outline, status, inspiration, and any user-added context. It also contains the target stable segment ID, source-text hash, title and words, your note, only the immediate previous/next words, and the generic tracked [`ai_guide.json`](ai_guide.json). The full root project manifest is part of the request, so review it before using an external AI provider. VPS does not copy `narration_manifest.json`, audio files, takes, or unrelated narration segments into the request. `result.json` is a separate response scaffold. A terminal AI of the user's choice reads the request and fills `status`, `proposed_text`, `rationale`, and optional `provider`/completion metadata. Use **Refresh AI results** to import completed proposals. VPS checks that the request and result identities and source hash match, and detects if the approved words have changed since the request. See [`narration_request.schema.json`](narration_request.schema.json) and [`narration_result.schema.json`](narration_result.schema.json).
+`request.json` is created by VPS and should be treated as the preserved brief. Its `project_context` contains the full root `video_project.json` so the AI sees the project idea, direction, narration outline, status, inspiration, and any user-added context. It also contains the target stable segment ID, source-text hash, title and words, your note, only the immediate previous/next words, and the generic tracked [`ai_guide.json`](ai_guide.json). The full root project manifest is part of the request, so review it before using an external AI provider. VPS does not copy `narration_manifest.json`, audio files, takes, or unrelated narration segments into the request. `result.json` is a separate response and progress record. A terminal AI of the user's choice reads the request and updates the paired result file. Use **Refresh AI results** to import completed proposals. VPS checks that the request and result identities and source hash match, and detects if the approved words have changed since the request. See [`narration_request.schema.json`](narration_request.schema.json) and [`narration_result.schema.json`](narration_result.schema.json).
 
-For a manual handoff: review the request file, ask your chosen AI to follow its `task` field and use the supplied project manifest plus selected-segment context, then have it update the paired result file while preserving `request_id`, `segment_id`, and `source_text_sha256`. Set `status` to `completed` and fill `proposed_text` and `rationale`; leave the other scaffold fields intact. Return to VPS and press **Refresh AI results**.
+#### Request and result examples
+
+Each request is stored under the selected segment's stable ID. The request ID increments for each attempt; creating another request preserves earlier files:
+
+```text
+audio/narration_requests/<stable-segment-id>/requests/SCR-001/
+├── request.json
+└── result.json
+```
+
+Example `request.json` (shortened for readability; in a real request, `project_context` and `ai_guide` contain their full objects):
+
+```json
+{
+  "schema_version": 1,
+  "request_id": "SCR-001",
+  "segment_id": "found-effectcraft",
+  "created_at": "2026-11-23T10:00:00+08:00",
+  "source_text_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "task": "Suggest a complete replacement for this segment while preserving its meaning and natural spoken voice. Do not edit narration_manifest.json or any other project file. Write the response only to the paired result.json, preserving its identity and source hash.",
+  "project_context": {
+    "project_title": "EffectCraft introduction",
+    "project_idea": {
+      "summary": "Explain the project in a friendly way.",
+      "creative_direction": "Warm and conversational."
+    }
+  },
+  "context": {
+    "segment_id": "found-effectcraft",
+    "title": "Finding EffectCraft",
+    "text": "I found EffectCraft. It's free and open source.",
+    "note": "Add a little context before the reveal.",
+    "previous_text": null,
+    "next_text": "It helps create motion graphics."
+  },
+  "ai_guide": {
+    "purpose": "The full tracked narration editing guide is included here."
+  }
+}
+```
+
+VPS initially creates this `result.json` scaffold:
+
+```json
+{
+  "schema_version": 1,
+  "request_id": "SCR-001",
+  "segment_id": "found-effectcraft",
+  "source_text_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "status": "requested",
+  "proposed_text": "",
+  "rationale": "",
+  "provider": null,
+  "completed_at": null,
+  "error": null
+}
+```
+
+The external assistant should preserve the request ID, segment ID, and source hash; set status to `in_progress` while working; then set it to `completed` with `proposed_text`, `rationale`, `provider`, and `completed_at`. If it cannot finish, set status to `failed` and describe the issue in `error`. For example, a completed result looks like:
+
+```json
+{
+  "schema_version": 1,
+  "request_id": "SCR-001",
+  "segment_id": "found-effectcraft",
+  "source_text_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "status": "completed",
+  "proposed_text": "I recently found EffectCraft, a free, open-source tool for making motion graphics.",
+  "rationale": "Adds context before naming the tool.",
+  "provider": "Claude",
+  "completed_at": "2026-11-23T10:08:00+08:00",
+  "error": null
+}
+```
+
+The status values are `requested`, `in_progress`, `completed`, and `failed`. Only a valid `completed` result is imported as a suggestion. Refreshing may import it for review, but does not edit the narration manifest. After reviewing or auditioning the suggestion, **Accept** replaces only that segment's `text` in `audio/narration_manifest.json`; its stable ID, order, and other settings remain unchanged. Acceptance is refused if the source wording has changed since the request, and the suggestion is marked stale instead.
+
+From the video-project root, a terminal AI can discover request files without relying on Git's untracked-file display:
+
+```bash
+rg --files --hidden --no-ignore -g 'request.json' audio/narration_requests
+rg -n '"status"|"provider"|"completed_at"|"error"' audio/narration_requests -g 'result.json'
+```
+
+Git status can also show the new files when the video project is inside a Git repository and the paths are not ignored. The `rg` commands work independently of that condition.
+
+For a manual handoff: review the request file, ask your chosen AI to follow its `task` field and use the supplied `video_project.json` plus selected-segment context, then have it update only the paired result file while preserving `request_id`, `segment_id`, and `source_text_sha256`. Keep its status current (`in_progress`, then `completed` or `failed`). Return to VPS and press **Refresh AI results**; after review, explicitly accept or dismiss the imported suggestion.
 
 The optional **Run with Codex CLI** action uses the same saved request JSON, with one local `codex exec` in an ephemeral read-only sandbox and temporary working directory. It does not connect to a Codex server or the current Codex chat. The CLI option is secondary; terminal Codex, Claude, or any other AI that can read/write these JSON files can be used without VPS launching it. Neither path edits the narration manifest automatically. Suggestions must still be accepted in VPS. The [Codex CLI documentation](https://developers.openai.com/codex/cli) describes the optional CLI mechanism.
 

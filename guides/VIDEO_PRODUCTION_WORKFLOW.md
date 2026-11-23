@@ -17,6 +17,8 @@ Use the same approach for a new project:
 
 The exact spoken words and segment order belong in `audio/narration_manifest.json`. A separate `SCRIPT.md` or `PRODUCTION_PLAN.md` can hold editorial notes, research, or a broader brief, but it is not a second source of truth for the words being generated.
 
+For another AI-assisted wording pass, write an editorial note in the workbench and choose **Create AI request JSON**. VPS saves the brief and a separate progress/result file under `audio/narration_requests/<stable-segment-id>/requests/<request-id>/`. A terminal Codex, Claude, or other assistant can find it from the project root with `rg --files --hidden --no-ignore -g 'request.json' audio/narration_requests`; no AI server is required. VPS imports a completed result only after **Refresh AI results**. The proposal changes no spoken text until you explicitly accept it; acceptance replaces that segment's `text` in `audio/narration_manifest.json`, while preserving its stable ID. See the [narration request and result contract](../tools/audio_narration_generator/README.md#request-and-result-examples) for JSON examples, status values, and safeguards.
+
 ## Set up and open a project
 
 Keep each video's working files together outside the public VPS source repository. Start with the narration manifest template included with the generator:
