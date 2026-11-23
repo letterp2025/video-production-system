@@ -8,6 +8,13 @@ These instructions apply to this public repository.
 - Read the relevant note there when a task depends on local tools. Keep personal paths, private workflow details, and other local-only information in that ignored folder; do not force-add or copy it into public files unless the user explicitly asks.
 - Preserve the root-level ignore rule for this folder. `IGNORED_DOCS/how_to_use.md` contains the local narration workbench launch command.
 
+## Task-order documents
+
+- Put repository-wide task orders in `docs/TASKS/` and name each file `TASK-ORDER_<CONCISE_TOPIC>.md`, using uppercase words separated by underscores.
+- A task order should capture the objective, user workflow, data ownership and storage, requirements, boundaries, implementation phases, acceptance checks, status, and related documents.
+- When asked to plan a task order first, document the requested future behavior without implementing it in the same pass unless the user separately asks for implementation.
+- Keep tool-specific task histories in their owning tool's documentation folder; link to a repository-wide task order when the scopes are related.
+
 ## Git commits
 
 - Commit completed task changes before handing work back to the user. Include the related source, tests, and documentation in the same logical commit.
