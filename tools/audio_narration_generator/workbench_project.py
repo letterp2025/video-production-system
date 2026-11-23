@@ -19,7 +19,7 @@ from workbench_layer_mappings import AudioLayerMappingMixin
 from workbench_common import (
     AI_GUIDE_PATH, MAX_NOTE_CHARS, MAX_TEXT_CHARS, MAX_TITLE_CHARS,
     MAX_TTS_VALUES, MAX_WORK_STATE_BYTES,
-    WorkbenchError, atomic_write_json, now_iso,
+    WorkbenchError, atomic_create_json, atomic_write_json, now_iso,
     sha256_bytes, text_hash, visual_animation_recipes,
 )
 from workbench_visuals import VisualPlanMixin
@@ -53,6 +53,54 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
         except (OSError, ValueError) as exc:
             raise WorkbenchError("The temporary work area must remain inside the selected audio folder.") from exc
 
+    def ensure_project_manifest(self) -> bool:
+        """Create a starter project brief if one is absent; never replace existing data."""
+        project_root = self.audio_root.parent.resolve(strict=True)
+        path = project_root / "video_project.json"
+        if path.is_symlink():
+            raise WorkbenchError("The project manifest cannot be a symlink.", 403)
+        if path.exists():
+            if not path.is_file():
+                raise WorkbenchError("The project manifest path exists but is not a file.", 409)
+            return False
+
+        starter = {
+            "schema_version": 1,
+            "project_title": project_root.name,
+            "project_idea": {
+                "summary": "",
+                "creative_direction": "",
+            },
+            "project_status": {
+                "narration_script": "not_assessed",
+                "narration_audio": "not_assessed",
+                "visual_elements_animation": "not_assessed",
+                "pending_codex_requests": {
+                    "script_and_narration": "not_assessed",
+                    "visual": "not_assessed",
+                },
+            },
+            "narration_outline": "",
+            "inspiration": {
+                "narration_samples": [],
+                "youtube_videos": [],
+                "artists": [],
+                "other_references": [],
+            },
+        }
+        try:
+            atomic_create_json(path, starter)
+            return True
+        except FileExistsError:
+            # Another workbench may have initialized the same project concurrently.
+            if path.is_symlink():
+                raise WorkbenchError("The project manifest cannot be a symlink.", 403)
+            if path.is_file():
+                return False
+            raise WorkbenchError("The project manifest path exists but is not a file.", 409)
+        except OSError as exc:
+            raise WorkbenchError(f"Could not create the project manifest: {exc}", 500) from exc
+
     def _read_manifest_bytes(self) -> bytes:
         try:
             return self.manifest_path.read_bytes()
@@ -69,7 +117,7 @@ class Project(VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
         return data, digest
 
     def project_manifest_payload(self) -> dict[str, Any]:
-        """Read the optional project-root brief without exposing other project files."""
+        """Read the project-root brief without exposing other project files."""
         project_root = self.audio_root.parent.resolve(strict=True)
         path = project_root / "video_project.json"
         try:

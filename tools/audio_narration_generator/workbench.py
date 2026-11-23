@@ -652,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = Project(args.manifest)
         project.read_manifest()
+        created_project_manifest = project.ensure_project_manifest()
         project.catalog = library_catalog(args.library_config)
     except WorkbenchError as exc:
         print(str(exc), file=sys.stderr)
@@ -664,6 +665,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Could not start local server on 127.0.0.1:{args.port}: {exc}", file=sys.stderr)
         return 2
     print(f"Narration workbench for {project.manifest_path.parent.parent.name}")
+    if created_project_manifest:
+        print("Created a starter video_project.json at the project root.")
     print(f"Open http://127.0.0.1:{args.port} in your browser. Press Ctrl+C to stop.")
     print(f"Codex CLI: {'available' if codex_path else 'not found'}; Windows SAPI preview: {'available' if platform.system() == 'Windows' else 'unavailable on this system'}")
     try:

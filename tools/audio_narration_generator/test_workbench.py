@@ -46,6 +46,59 @@ class ProjectTest(unittest.TestCase):
     def write_manifest(self):
         self.manifest.write_text(json.dumps(self.data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    def test_project_manifest_starter_is_created_once_and_preserves_existing_content(self):
+        path = self.root / "video_project.json"
+        self.assertTrue(self.project.ensure_project_manifest())
+        created = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(created["project_title"], self.root.name)
+        self.assertEqual(created["project_idea"], {"summary": "", "creative_direction": ""})
+        self.assertEqual(created["narration_outline"], "")
+        self.assertEqual(created["project_status"]["narration_script"], "not_assessed")
+        self.assertEqual(created["project_status"]["pending_codex_requests"]["visual"], "not_assessed")
+        self.assertEqual(created["inspiration"], {
+            "narration_samples": [], "youtube_videos": [], "artists": [], "other_references": [],
+        })
+
+        original = path.read_bytes()
+        self.assertFalse(self.project.ensure_project_manifest())
+        self.assertEqual(path.read_bytes(), original)
+
+        path.write_text('{"user_edit": true}\n', encoding="utf-8")
+        user_content = path.read_bytes()
+        self.assertFalse(self.project.ensure_project_manifest())
+        self.assertEqual(path.read_bytes(), user_content)
+
+    def test_project_manifest_initializer_does_not_follow_symlink(self):
+        outside = self.root.parent / f"{self.root.name}-outside.json"
+        outside.write_text('{"outside": true}', encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        try:
+            (self.root / "video_project.json").symlink_to(outside)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"Symlinks are unavailable: {exc}")
+
+        with self.assertRaisesRegex(workbench.WorkbenchError, "cannot be a symlink"):
+            self.project.ensure_project_manifest()
+        self.assertEqual(outside.read_text(encoding="utf-8"), '{"outside": true}')
+
+    def test_starting_workbench_creates_the_project_manifest(self):
+        class FakeServer:
+            def __init__(self, _address, _handler):
+                pass
+
+            def serve_forever(self, poll_interval):
+                pass
+
+            def server_close(self):
+                pass
+
+        with mock.patch.object(workbench, "ThreadingHTTPServer", FakeServer), \
+             mock.patch.object(workbench, "resolve_codex", return_value=None):
+            result = workbench.main(["--manifest", str(self.manifest), "--port", "8766"])
+
+        self.assertEqual(result, 0)
+        self.assertTrue((self.root / "video_project.json").is_file())
+
     def test_work_state_persists_separately_and_never_enters_generation_hash(self):
         before = narration.segments_array_sha256(self.data)
         self.project.save_note("opening-hook", "Give this line more context before the reveal.")

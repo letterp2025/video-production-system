@@ -41,10 +41,13 @@ If F5-TTS needs a different Python environment, add `--python 'C:\path\to\f5-tts
 
 ## Project folders and what owns each layer
 
+When VPS starts for a project, it creates a starter `video_project.json` at this root if one is missing. It is a user- and Codex-facing brief: capture the general idea, creative direction, rough conversational narration outline, inspirations (sample narration, YouTube videos, artists, and other references), and project-status notes. Status fields start as `not_assessed` rather than making assumptions about existing project work. The workbench does not overwrite an existing file or automatically synchronize these notes; edit the JSON as the project evolves. **Project manifest** in the workbench header opens a read-only view of it.
+
 The project root is the folder containing `README.md` and `audio/`. The first project already uses the narration folders shown below. The `visual_layer/`, `audio/music/`, `audio/sfx/`, and `assets/` folders are created when that work is started; they are not prerequisites for drafting or reviewing narration.
 
 ```text
 effectcraft-introduction-01/
+├── video_project.json                # creative brief, inspirations, and status context
 ├── README.md                         # project status and links (optional)
 ├── SCRIPT.md                         # research/editorial notes (optional)
 ├── PRODUCTION_PLAN.md                # broader brief or history (optional)
