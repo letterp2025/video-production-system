@@ -19,22 +19,23 @@
     },
     "animation": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["recipe_id", "recipe_title"],
-      "properties": {
-        "recipe_id": {
-          "anyOf": [
-            { "type": "null" },
-            { "type": "string", "pattern": "^ANM-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
-          ]
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "recipe_id": { "type": "null" },
+            "recipe_title": { "type": "null" }
+          }
         },
-        "recipe_title": {
-          "anyOf": [
-            { "type": "null" },
-            { "type": "string", "minLength": 1, "maxLength": 160 }
-          ]
+        {
+          "additionalProperties": false,
+          "properties": {
+            "recipe_id": { "type": "string", "pattern": "^ANM-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+            "recipe_title": { "type": "string", "maxLength": 160, "pattern": "\\S" }
+          }
         }
-      }
+      ]
     },
     "visual": {
       "type": "object",
