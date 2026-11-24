@@ -8,7 +8,7 @@
     "title": "Short human-readable segment label.",
     "text": "Approved spoken words. Notes and suggestions are not spoken text.",
     "status": "active is included in narration, inactive is kept but omitted, deleted is retired history.",
-    "voice_style": "Optional key in voice_styles. A null value uses the root voice profile.",
+    "voice_style": "Optional key in voice_styles. A null value uses the project default voice when configured, otherwise the narration manifest fallback.",
     "tts": "Optional per-segment overrides for settings supported by the narration generator."
   },
   "suggestion_rules": [
@@ -27,7 +27,7 @@
       "The selected segment's spoken text",
       "The creator's note for that segment",
       "The immediately preceding and following segment text when present",
-      "The full root video_project.json, including its idea, creative direction, outline, project status, inspirations, and user-added context",
+      "The root video_project.json creative context, with narration.default_voice removed",
       "This generic AI guide"
     ],
     "never_include": [

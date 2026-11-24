@@ -694,6 +694,28 @@ class HttpTest(unittest.TestCase):
         }), encoding="utf-8")
         self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
 
+    def test_narration_request_omits_project_default_voice(self):
+        project_manifest_path = self.root / "video_project.json"
+        self.project.ensure_project_manifest()
+        project_manifest = json.loads(project_manifest_path.read_text(encoding="utf-8"))
+        project_manifest["narration"]["default_voice"] = {
+            "reference_audio": "audio/reference_voice.wav",
+            "reference_text": "Private reference transcript.",
+        }
+        project_manifest["narration"]["delivery_note"] = "Conversational."
+        project_manifest["project_idea"]["summary"] = "A VPS introduction."
+        project_manifest_path.write_text(json.dumps(project_manifest), encoding="utf-8")
+        response = self.project.create_narration_request(
+            "beat-one", "Improve the opening.", self.project.read_manifest()[1],
+        )
+        request_path = self.root / response["relative_path"]
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        self.assertNotIn("default_voice", request["project_context"]["narration"])
+        self.assertEqual(request["project_context"]["narration"]["delivery_note"], "Conversational.")
+        self.assertEqual(request["project_context"]["project_idea"]["summary"], "A VPS introduction.")
+        self.assertNotIn("Private reference transcript.", request_path.read_text(encoding="utf-8"))
+        self.assertEqual(json.loads(project_manifest_path.read_text(encoding="utf-8")), project_manifest)
+
     def test_project_manifest_api_reports_missing_or_invalid_root_documents(self):
         with self.assertRaises(HTTPError) as missing:
             urlopen(self.base + "/api/project-manifest")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -126,7 +127,10 @@ class NarrationRequestsMixin:
             data, digest = self.read_manifest()
             self._check_manifest_hash(expected_hash, digest)
             index, segment = self.find_segment(data, segment_id)
-            project_manifest = self.project_manifest_payload()["manifest"]
+            project_manifest = deepcopy(self.project_manifest_payload()["manifest"])
+            narration_settings = project_manifest.get("narration")
+            if isinstance(narration_settings, dict):
+                narration_settings.pop("default_voice", None)
             context = {
                 "segment_id": segment_id,
                 "title": segment.get("title", segment_id),
