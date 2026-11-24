@@ -20,10 +20,12 @@
     "segment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference"],
+      "required": ["visual_intent", "renderer", "implementation", "library_reference"],
+      "oneOf": [ { "required": ["source_text_sha256"] }, { "required": ["source_unit_sha256"] } ],
       "properties": {
         "visual_intent": { "type": "string", "maxLength": 24000 },
         "source_text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "source_unit_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "renderer": { "enum": ["effectcraft", "manim", "gsap", null] },
         "implementation": {
           "oneOf": [

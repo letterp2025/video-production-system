@@ -143,6 +143,17 @@ h1 { font-size: 30px; line-height: .95; }
 .segment-status-dot.needs { background: var(--red); }
 .segment-status-dot.inactive { background: #c5c5be; }
 .segment-status-dot.deleted { background: transparent; border: 1px solid currentColor; }
+.segment-status-dot.visual-only { background: var(--cyan); border-radius: 0; transform: rotate(45deg); }
+.sequence-unit-controls { display: grid; gap: 6px; padding: 12px 0; border-block: 1px solid var(--line); margin-bottom: 14px; }
+.sequence-unit-controls[hidden], .sequence-warning[hidden] { display: none; }
+.sequence-unit-controls label { font-size: 11px; font-weight: 700; }
+.sequence-unit-controls input, .sequence-unit-controls textarea { width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--line); background: var(--paper); font: inherit; font-size: 12px; }
+.sequence-unit-controls button, #add-visual-unit { font-size: 11px; }
+.sequence-move-controls { display: flex; gap: 6px; }
+.sequence-move-controls button { flex: 1; padding: 7px 3px; border: 1px solid var(--ink); background: var(--sheet); }
+.sequence-warning { padding: 8px; margin: 10px 0; border-left: 3px solid var(--red); font-size: 11px; overflow-wrap: anywhere; }
+#add-visual-unit { width: 100%; margin-bottom: 12px; }
+.script-layer-panel:has(.review-panel[hidden]) { grid-template-columns: minmax(0, 1fr); }
 .work-queue { margin-top: auto; padding-top: 22px; }
 .work-queue > div { display: flex; gap: 10px; align-items: flex-start; }
 .queue-mark { width: 11px; height: 11px; flex: 0 0 auto; margin-top: 4px; background: var(--cyan); transform: rotate(45deg); }

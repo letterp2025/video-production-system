@@ -38,7 +38,7 @@ class AudioLayerMappingMixin(VisualRequestsMixin):
             raise WorkbenchError("The project Music manifest must stay inside the video project.") from exc
         return path
 
-    def project_music_layer_payload(self, narration_data: dict[str, Any]) -> dict[str, Any]:
+    def project_music_layer_payload(self, narration_data: dict[str, Any], units: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         relative_path = "audio/music/manifest.json"
         base = {"status": "none", "exists": False, "can_open": False,
                 "relative_path": relative_path, "items": [], "item_count": 0, "error": None}
@@ -55,10 +55,11 @@ class AudioLayerMappingMixin(VisualRequestsMixin):
                     "error": "Music manifest is larger than the 1 MB workbench limit."}
         try:
             value = self._read_layer_json(path)
-            manifest = validate_project_music_manifest(value, narration_data["segments"], self._project_root())
+            sequence = units if units is not None else self.sequence_units(narration_data)[0]
+            manifest = validate_project_music_manifest(value, sequence, self._project_root())
         except (WorkbenchError, ValueError, OSError, TypeError) as exc:
             return {**base, "status": "invalid", "exists": True, "can_open": True, "error": str(exc)}
-        by_id = {segment["id"]: (index + 1, segment) for index, segment in enumerate(narration_data["segments"])}
+        by_id = {segment["id"]: (index + 1, segment) for index, segment in enumerate(sequence)}
         items = []
         for item in manifest["items"]:
             start_position, start_segment = by_id[item["start_segment_id"]]

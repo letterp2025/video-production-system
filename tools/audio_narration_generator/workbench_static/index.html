@@ -20,7 +20,7 @@
     <div class="header-playback" aria-label="Play active narration">
       <button id="play-sapi-sequence" class="header-playback-button sapi-button" type="button">
         <strong id="play-sapi-label">&#9654; Preview SAPI fast</strong>
-        <small>Starts at selected beat · pause and resume</small>
+        <small>Speech-only preview · visual units are skipped</small>
       </button>
       <audio id="sapi-audio" preload="metadata" hidden></audio>
       <button id="play-active-narration" class="header-playback-button f5-button" type="button">
@@ -38,18 +38,31 @@
   </header>
 
   <main class="layout">
-    <aside class="sequence-panel" aria-label="Narration segments">
+    <aside class="sequence-panel" aria-label="Video sequence">
       <div class="panel-heading">
         <div>
-          <p class="section-kicker">THE SCRIPT</p>
-          <h1>Beats</h1>
+          <p class="section-kicker">THE VIDEO</p>
+          <h1>Sequence</h1>
         </div>
         <span class="count-badge" id="segment-count">—</span>
       </div>
-      <p class="sequence-help" id="sequence-help" aria-live="polite">List order is spoken order. Select a beat to edit it.</p>
+      <p class="sequence-help" id="sequence-help" aria-live="polite">Story order includes narration and visual-only units. Durations are planned targets.</p>
       <div class="beat-filters" aria-label="Beat visibility">
         <label><input id="show-inactive" type="checkbox"> Show inactive</label>
         <label><input id="show-deleted" type="checkbox"> Show deleted</label>
+      </div>
+      <button id="add-visual-unit" class="button button-outline" type="button">+ Add visual-only unit</button>
+      <div id="sequence-warning" class="sequence-warning" role="status" hidden></div>
+      <button id="reconcile-sequence" type="button" class="button button-outline" hidden>Sync speech order to sequence</button>
+      <div id="sequence-unit-controls" class="sequence-unit-controls" hidden>
+        <label for="sequence-duration">Planned duration (seconds)</label>
+        <input id="sequence-duration" type="number" min="0.001" max="86400" step="0.001">
+        <label id="sequence-title-label" for="sequence-title">Visual title</label>
+        <input id="sequence-title" maxlength="160">
+        <label id="sequence-note-label" for="sequence-note">Editorial note</label>
+        <textarea id="sequence-note" maxlength="6000" rows="2"></textarea>
+        <button id="save-sequence-unit" class="button button-visual" type="button">Save sequence unit</button>
+        <div class="sequence-move-controls"><button id="sequence-move-up" type="button">Move up</button><button id="sequence-move-down" type="button">Move down</button></div>
       </div>
       <ol id="segment-list" class="segment-list"></ol>
       <div class="work-queue">
@@ -64,14 +77,14 @@
       </div>
     </aside>
 
-    <section class="layer-workspace" aria-label="Selected beat production layers">
+    <section class="layer-workspace" aria-label="Selected sequence unit production layers">
       <div class="layer-tabs" role="tablist" aria-label="Production layers">
         <button id="tab-script-layer" class="layer-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-script-layer" tabindex="0">Script and Narration Layer</button>
         <button id="tab-visual-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-visual-layer" tabindex="-1">Visual Layer</button>
         <button id="tab-music-layer" class="layer-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-music-layer" tabindex="-1">Music Layer</button>
       </div>
       <div class="shared-narration-context" role="group" aria-label="Shared narration context">
-        <div><span>Shared narration context</span><strong id="shared-narration-position">No narration segment selected</strong></div>
+        <div><span>Selected story unit</span><strong id="shared-narration-position">No sequence unit selected</strong></div>
         <code id="shared-narration-id">—</code>
       </div>
 
@@ -79,8 +92,8 @@
         <section class="editor-panel" aria-label="Selected narration segment">
           <div id="empty-state" class="empty-state" hidden>
             <span class="empty-glyph" aria-hidden="true">✳</span>
-            <h2>No narration segments</h2>
-            <p>Add segment objects to the project's narration manifest, then reload this page.</p>
+            <h2 id="empty-state-heading">No narration for this unit</h2>
+            <p id="empty-state-message">Select a narration unit to edit spoken words. Visual-only units still support visual requests and music boundaries.</p>
           </div>
           <div id="editor" hidden>
             <div class="editor-topline">
@@ -201,7 +214,7 @@
           <div class="take-workspace">
             <div class="visual-take-controls">
               <label class="visual-take-field" for="visual-take-select">
-                <span>Take · applies across the narration spine</span>
+                  <span>Take · applies across the video sequence</span>
                 <select id="visual-take-select" aria-describedby="visual-take-status"><option value="">No visual take selected</option></select>
               </label>
               <div class="visual-take-actions">
@@ -281,8 +294,8 @@
       <section id="panel-music-layer" class="layer-tab-panel music-layer-panel" role="tabpanel" aria-labelledby="tab-music-layer" tabindex="0" hidden>
         <div class="layer-content music-layer-content">
           <p class="section-kicker">MUSIC LAYER</p>
-          <h1>Music across the narration</h1>
-          <p class="music-layer-intro">Each Music item spans the project spine: it begins at the start of one segment and ends at the end of another.</p>
+          <h1>Music across the video</h1>
+          <p class="music-layer-intro">Music can start or end on any sequence unit, including a visual-only opening or outro.</p>
           <div class="music-manifest-workspace">
             <div class="music-manifest-heading">
               <div>
@@ -304,7 +317,7 @@
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
   <footer class="footer-line">
-    <span>Local only · Changes go to the selected narration manifest after review</span>
+      <span>Local only · Sequence, narration, and layer JSON stay in this project</span>
     <button id="reload-project" class="text-button" type="button">Reload manifest</button>
   </footer>
   <dialog id="insert-beat-dialog" class="insert-beat-dialog" aria-labelledby="insert-beat-heading">
@@ -326,6 +339,17 @@
         <button id="cancel-insert-beat" class="button button-outline" type="button">Cancel</button>
         <button id="save-insert-beat" class="button button-ink" type="submit">Add beat after</button>
       </div>
+    </form>
+  </dialog>
+  <dialog id="add-visual-dialog" class="insert-beat-dialog" aria-labelledby="add-visual-heading">
+    <form id="add-visual-form">
+      <h2 id="add-visual-heading">Add visual-only unit</h2>
+      <p>No spoken text or audio take is created.</p>
+      <label for="new-visual-id">Stable ID</label><input id="new-visual-id" required placeholder="opening-card" autocomplete="off">
+      <label for="new-visual-title">Title</label><input id="new-visual-title" required maxlength="160" autocomplete="off">
+      <label for="new-visual-duration">Planned seconds</label><input id="new-visual-duration" required type="number" min="0.001" max="86400" step="0.001" value="3">
+      <label for="new-visual-note">Editorial note (optional)</label><textarea id="new-visual-note" maxlength="6000"></textarea>
+      <div class="insert-beat-actions"><button id="cancel-add-visual" class="button button-outline" type="button">Cancel</button><button class="button button-visual" type="submit">Add to sequence</button></div>
     </form>
   </dialog>
   <dialog id="project-manifest-dialog" class="project-manifest-dialog" aria-labelledby="project-manifest-heading">

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from workbench_common import WorkbenchError, atomic_create_json, atomic_write_json, now_iso, text_hash
-from workbench_layer_contracts import REQUEST_ID_PATTERN, RENDERERS, project_relative_path
+from workbench_layer_contracts import REQUEST_ID_PATTERN, RENDERERS, project_relative_path, visual_source_hash, visual_source_field
 from workbench_visual_takes import VisualTakeMixin
 
 
@@ -20,6 +20,7 @@ class VisualRequestsMixin(VisualTakeMixin):
         "schema_version", "take_id", "segment_id", "request_id", "source_text_sha256", "status",
         "implementation_path", "preview_path", "export_path", "provider", "updated_at", "completed_at", "error",
     }
+    _VISUAL_RESULT_FIELDS = (_RESULT_FIELDS - {"source_text_sha256"}) | {"source_unit_sha256"}
 
     def _request_folder(self, take_id: str, segment_id: str, request_id: str, *, create: bool = False) -> Path:
         if not isinstance(request_id, str) or not REQUEST_ID_PATTERN.fullmatch(request_id):
@@ -40,7 +41,8 @@ class VisualRequestsMixin(VisualTakeMixin):
 
     def _selected_request_context(self, segment_id: str) -> tuple[dict[str, Any], dict[str, Any], str]:
         data, _ = self.read_manifest()
-        self.find_segment(data, segment_id)
+        if segment_id not in {unit["id"] for unit in self._visual_units(data)}:
+            raise WorkbenchError("Sequence unit not found.", 404)
         layer = self.visual_layer_payload(data)
         take_id = layer.get("selected_take_id")
         if not take_id or layer.get("selection_status") != "saved":
@@ -58,15 +60,17 @@ class VisualRequestsMixin(VisualTakeMixin):
                     raise ValueError("Request files cannot be symlinks.")
                 brief = self._read_layer_json(request_path)
                 raw_result = self._read_layer_json(result_path)
-                if (not isinstance(brief, dict) or brief.get("schema_version") != 1
+                visual_only = brief.get("schema_version") == 2 if isinstance(brief, dict) else False
+                source_field = "source_unit_sha256" if visual_only else "source_text_sha256"
+                if (not isinstance(brief, dict) or brief.get("schema_version") not in {1, 2}
                     or brief.get("request_id") != request_id or brief.get("take_id") != take_id
                     or brief.get("segment_id") != segment_id):
                     raise ValueError("Request identity does not match its folder.")
-                if not isinstance(brief.get("source_text_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", brief["source_text_sha256"]):
-                    raise ValueError("Request narration hash is invalid.")
+                if not isinstance(brief.get(source_field), str) or not re.fullmatch(r"[0-9a-f]{64}", brief[source_field]):
+                    raise ValueError("Request source hash is invalid.")
                 result, legacy_result = self._validate_visual_result(raw_result, brief, folder)
                 items.append({"request_id": request_id, "brief": brief.get("brief", ""), "renderer": brief.get("renderer"),
-                              "source_text_sha256": brief["source_text_sha256"],
+                              source_field: brief[source_field],
                               "references": brief.get("references", []), "result": result, "legacy_result": legacy_result,
                               "sfx_path": f"{folder.relative_to(self._project_root()).as_posix()}/sfx.json" if (folder / "sfx.json").is_file() and not (folder / "sfx.json").is_symlink() else None})
             except (WorkbenchError, ValueError, OSError) as exc:
@@ -96,14 +100,16 @@ class VisualRequestsMixin(VisualTakeMixin):
             if result.get("request_id") != request["request_id"]:
                 raise ValueError("Legacy result request ID does not match its request.")
         else:
-            if set(result) != self._RESULT_FIELDS:
+            visual_only = request["schema_version"] == 2
+            source_field = "source_unit_sha256" if visual_only else "source_text_sha256"
+            if set(result) != (self._VISUAL_RESULT_FIELDS if visual_only else self._RESULT_FIELDS):
                 raise ValueError("Result fields do not match the Visual Layer result contract.")
-            if (type(result.get("schema_version")) is not int or result["schema_version"] != 2
+            if (type(result.get("schema_version")) is not int or result["schema_version"] != (3 if visual_only else 2)
                 or result.get("take_id") != request["take_id"]
                 or result.get("segment_id") != request["segment_id"]
                 or result.get("request_id") != request["request_id"]
-                or result.get("source_text_sha256") != request["source_text_sha256"]):
-                raise ValueError("Result identity or source-text hash does not match its request.")
+                or result.get(source_field) != request[source_field]):
+                raise ValueError("Result identity or source-text hash does not match its request." if not visual_only else "Result identity or source-unit hash does not match its request.")
             if not self._valid_timestamp(result.get("updated_at")):
                 raise ValueError("Result updated_at must be an ISO 8601 timestamp with a timezone.")
             provider = result.get("provider")
@@ -174,9 +180,12 @@ class VisualRequestsMixin(VisualTakeMixin):
             data, digest = self.read_manifest()
             self._check_manifest_hash(expected_hash, digest)
             _, document, take_id = self._selected_request_context(segment_id)
+            unit = next(unit for unit in self._visual_units(data) if unit["id"] == segment_id)
             entry = document["segments"].get(segment_id)
             if entry is None:
-                raise WorkbenchError("This narration segment is not in the take. Add its stable ID to the take JSON first.")
+                entry = {"visual_intent": "", visual_source_field(unit): visual_source_hash(unit),
+                         "renderer": None, "implementation": None, "library_reference": None}
+                document["segments"][segment_id] = entry
             ids = entry.get("request_ids", [])
             if len(ids) >= 500:
                 raise WorkbenchError("This segment has reached the 500-request limit.", 413)
@@ -184,26 +193,27 @@ class VisualRequestsMixin(VisualTakeMixin):
             request_id = f"VIS-{number:03d}"
             folder = self._request_folder(take_id, segment_id, request_id, create=True)
             request_path = folder / "request.json"
-            request_doc = {"schema_version": 1, "take_id": take_id, "segment_id": segment_id,
-                           "request_id": request_id, "source_text_sha256": text_hash(self.find_segment(data, segment_id)[1]["text"]),
+            source_field = visual_source_field(unit)
+            request_doc = {"schema_version": 2 if unit["kind"] == "visual_only" else 1, "take_id": take_id, "segment_id": segment_id,
+                           "request_id": request_id, source_field: visual_source_hash(unit),
                            "brief": brief.strip(), "renderer": renderer, "references": clean_references,
                            "task": (
                                "Create this segment's visual asset using the brief and optional references. Keep all outputs "
                                "inside this request folder. Do not edit request.json or narration_manifest.json. Update the paired "
-                               "result.json, preserving its take_id, segment_id, request_id, and source_text_sha256. Set status to "
+                               f"result.json, preserving its take_id, segment_id, request_id, and {source_field}. Set status to "
                                "in_progress while working and update updated_at. On success, set status to completed, set completed_at, "
                                "and point export_path to an existing rendered segment file. On failure, set status to failed and explain "
                                "the issue in error. Use only project-relative paths for outputs."
                            )}
             try:
                 atomic_create_json(request_path, request_doc)
-                source_hash = request_doc["source_text_sha256"]
+                source_hash = request_doc[source_field]
                 atomic_create_json(folder / "result.json", {
-                    "schema_version": 2,
+                    "schema_version": 3 if unit["kind"] == "visual_only" else 2,
                     "take_id": take_id,
                     "segment_id": segment_id,
                     "request_id": request_id,
-                    "source_text_sha256": source_hash,
+                    source_field: source_hash,
                     "status": "requested",
                     "implementation_path": None,
                     "preview_path": None,
@@ -234,10 +244,12 @@ class VisualRequestsMixin(VisualTakeMixin):
             item = next(item for item in self.visual_requests_payload(take_id, segment_id, entry)["requests"] if item["request_id"] == request_id)
             if item["result"]["status"] != "completed":
                 raise WorkbenchError("Only a completed visual candidate can be selected.")
-            if item["source_text_sha256"] != text_hash(self.find_segment(self.read_manifest()[0], segment_id)[1]["text"]):
-                raise WorkbenchError("This candidate was planned against older narration. Create a new request or review the text first.")
+            unit = next(unit for unit in self._visual_units(self.read_manifest()[0]) if unit["id"] == segment_id)
+            source_field = visual_source_field(unit)
+            if item[source_field] != visual_source_hash(unit):
+                raise WorkbenchError("This candidate was planned against an older source. Create a new request or review the unit first.")
             entry["selected_request_id"] = request_id
-            entry["source_text_sha256"] = item["source_text_sha256"]
+            entry[source_field] = item[source_field]
             try:
                 atomic_write_json(self._visual_take_path(take_id), document)
             except OSError as exc:

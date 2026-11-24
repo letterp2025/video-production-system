@@ -1,6 +1,6 @@
 # Task Order: Project Sequence Manifest
 
-**Task ID:** PSM-001 | **Status:** Planned; no implementation in this task-order pass | **Last updated:** 2026-11-24
+**Task ID:** PSM-001 | **Status:** Implemented in the workbench; verification pending in a real project | **Last updated:** 2026-11-24
 
 ## Objective
 
@@ -129,5 +129,6 @@ This is a planned change, not a claim that the workbench or existing JSON alread
 - [Video Production Workflow](../../guides/VIDEO_PRODUCTION_WORKFLOW.md)
 - [Segment Layers and Workbench Layout](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md)
 - [Narration workbench guide](../../tools/audio_narration_generator/README.md)
+- [Sequence manifest schema](../../tools/audio_narration_generator/sequence_manifest.schema.json)
 - [Visual take schema](../../tools/audio_narration_generator/visual_take.schema.json)
 - [Music manifest schema](../../tools/audio_narration_generator/music_manifest.schema.json)

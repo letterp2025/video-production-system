@@ -15,10 +15,17 @@ from workbench_layer_contracts import (
     TAKE_ID_PATTERN,
     validate_visual_take,
     visual_segment_status,
+    visual_source_hash,
+    visual_source_field,
 )
 
 
 class VisualTakeMixin:
+    def _visual_units(self, narration_data: dict[str, Any]) -> list[dict[str, Any]]:
+        units, _, _ = self.sequence_units(narration_data)
+        by_id = {item["id"]: item for item in narration_data["segments"]}
+        return [{**unit, **({"text": by_id[unit["id"]]["text"]} if unit["kind"] == "narration" else {})} for unit in units]
+
     def _project_root(self) -> Path:
         return self.audio_root.parent.resolve(strict=True)
 
@@ -72,13 +79,13 @@ class VisualTakeMixin:
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
             raise WorkbenchError("Layer file is not valid UTF-8 JSON.") from exc
 
-    def _visual_take_document(self, take_id: str, narration_data: dict[str, Any]) -> dict[str, Any]:
+    def _visual_take_document(self, take_id: str, narration_data: dict[str, Any], units: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         path = self._visual_take_path(take_id)
         if not path.is_file() or path.is_symlink():
             raise WorkbenchError("The visual take manifest is unavailable.", 404)
         value = self._read_layer_json(path)
         try:
-            return validate_visual_take(value, take_id, narration_data["segments"], self._project_root())
+            return validate_visual_take(value, take_id, units or self._visual_units(narration_data), self._project_root())
         except ValueError as exc:
             raise WorkbenchError(str(exc)) from exc
 
@@ -116,12 +123,12 @@ class VisualTakeMixin:
         except (WorkbenchError, OSError) as exc:
             return {**base, "title": take_id, "creative_direction": "", "status": "invalid", "error": str(exc)}
 
-        by_id = {segment["id"]: segment for segment in narration_data["segments"]}
+        by_id = {segment["id"]: segment for segment in self._visual_units(narration_data)}
         entry_statuses = {
             segment_id: self._visual_request_aware_status(take_id, segment_id, document["segments"].get(segment_id), segment)
             for segment_id, segment in by_id.items()
         }
-        active_ids = {segment["id"] for segment in narration_data["segments"] if segment.get("status", "active") == "active"}
+        active_ids = {segment["id"] for segment in by_id.values() if segment.get("status", "active") == "active"}
         missing_ids = sorted(active_ids - set(document["segments"]))
         active_statuses = [entry_statuses[segment_id] for segment_id in active_ids]
         if any(status == "invalid" for status in active_statuses):
@@ -143,7 +150,7 @@ class VisualTakeMixin:
             "complete_active_segment_count": sum(entry_statuses[item] == "saved" for item in active_ids),
         }
 
-    def visual_layer_payload(self, narration_data: dict[str, Any]) -> dict[str, Any]:
+    def visual_layer_payload(self, narration_data: dict[str, Any], units: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         selected_take_id: str | None = None
         selection_status = "none"
         try:
@@ -232,7 +239,7 @@ class VisualTakeMixin:
             return status
         items = self.visual_requests_payload(take_id, segment_id, entry)["requests"]
         selected = next((item for item in items if item["request_id"] == entry["selected_request_id"]), None)
-        if selected and selected.get("source_text_sha256") != text_hash(segment["text"]):
+        if selected and selected.get(visual_source_field(segment)) != visual_source_hash(segment):
             return "needs_review"
         return "saved" if selected and selected["result"]["status"] == "completed" else "invalid"
 
@@ -263,12 +270,12 @@ class VisualTakeMixin:
                 "segments": {
                     segment["id"]: {
                         "visual_intent": "",
-                        "source_text_sha256": text_hash(segment["text"]),
+                        visual_source_field(segment): visual_source_hash(segment),
                         "renderer": None,
                         "implementation": None,
                         "library_reference": None,
                     }
-                    for segment in narration_data["segments"]
+                    for segment in self._visual_units(narration_data)
                 },
             }
             try:

@@ -220,6 +220,10 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                     self._json(200, project.state_payload())
                 elif self.path == "/api/project-manifest":
                     self._json(200, project.project_manifest_payload())
+                elif self.path == "/api/sequence":
+                    data, _ = project.read_manifest()
+                    units, digest, unlinked = project.sequence_units(data)
+                    self._json(200, {"units": units, "sequence_hash": digest, "unlinked_narration_ids": unlinked})
                 elif self.path == "/api/library/entries":
                     self._json(200, {"entries": project.catalog.entries(), "private_available": "private" in project.catalog.roots})
                 elif self.path.startswith("/api/library/entry?"):
@@ -321,6 +325,8 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                         self._required_string(body, "manifest_hash"),
                     )
                     self._json(201, result)
+                elif self.path in {"/api/sequence/add", "/api/sequence/update", "/api/sequence/move", "/api/sequence/link", "/api/sequence/reconcile"}:
+                    self._json(200, project.edit_sequence(self.path.rsplit("/", 1)[-1], body))
                 elif self.path == "/api/visual-takes/select":
                     self._json(200, {"state": project.select_visual_take(self._required_string(body, "take_id"))})
                 elif self.path == "/api/visual-takes/open":
@@ -672,6 +678,7 @@ def main(argv: list[str] | None = None) -> int:
         project = Project(args.manifest)
         project.read_manifest()
         created_project_manifest = project.ensure_project_manifest()
+        created_sequence_manifest = project.ensure_sequence_manifest()
         project.catalog = library_catalog(args.library_config)
     except WorkbenchError as exc:
         print(str(exc), file=sys.stderr)
@@ -686,6 +693,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Narration workbench for {project.manifest_path.parent.parent.name}")
     if created_project_manifest:
         print("Created a starter video_project.json at the project root.")
+    if created_sequence_manifest:
+        print("Created sequence_manifest.json from narration order at the project root.")
     print(f"Open http://127.0.0.1:{args.port} in your browser. Press Ctrl+C to stop.")
     print(f"Codex CLI: {'available' if codex_path else 'not found'}; Windows SAPI preview: {'available' if platform.system() == 'Windows' else 'unavailable on this system'}")
     try:

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Project-wide Music manifest",
+  "title": "Project-wide Music manifest (segment IDs resolve against sequence units)",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "layer", "items"],

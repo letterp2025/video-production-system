@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VPS project story sequence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "units"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "units": { "type": "array", "maxItems": 2000, "items": { "oneOf": [
+      { "$ref": "#/$defs/narration" }, { "$ref": "#/$defs/visual_only" }
+    ] } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+    "duration": { "type": "number", "exclusiveMinimum": 0, "maximum": 86400 },
+    "narration": { "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "narration_segment_id", "duration_seconds"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "const": "narration" },
+        "narration_segment_id": { "$ref": "#/$defs/id" }, "duration_seconds": { "$ref": "#/$defs/duration" } } },
+    "visual_only": { "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "title", "duration_seconds"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "const": "visual_only" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "duration_seconds": { "$ref": "#/$defs/duration" }, "note": { "type": "string", "maxLength": 6000 } } }
+  }
+}

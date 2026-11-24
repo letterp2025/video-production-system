@@ -24,9 +24,10 @@ from workbench_common import (
     sha256_bytes, text_hash, visual_animation_recipes,
 )
 from workbench_visuals import VisualPlanMixin
+from workbench_sequence import SequenceMixin
 
 
-class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
+class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, AudioReadMixin):
     """Manifest and private work queue, with focused audio and layer helpers."""
 
     def __init__(self, manifest_path: Path):
@@ -227,22 +228,30 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
     def state_payload(self) -> dict[str, Any]:
         with self.lock:
             data, manifest_digest = self.read_manifest()
+            sequence_units, sequence_hash, unlinked = self.sequence_units(data)
+            narrated_order = [unit["id"] for unit in sequence_units if unit["kind"] == "narration"]
+            linked_ids = set(narrated_order)
+            narration_order = [segment["id"] for segment in data["segments"] if segment["id"] in linked_ids]
+            sequence_order_conflict = narrated_order != narration_order
             state = self.read_state()
             if self._sync_stale(data, state):
                 self.write_state(state)
             visual_recipes = self._recipe_catalog()
             recipes_by_id = {item["id"]: item["title"] for item in visual_recipes}
-            visual_layer = self.visual_layer_payload(data)
+            visual_layer = self.visual_layer_payload(data, sequence_units)
             visual_take_document = None
             selected_visual_take = visual_layer.get("selected_take") or {}
             if selected_visual_take.get("take_id") and selected_visual_take.get("status") != "invalid":
                 try:
-                    visual_take_document = self._visual_take_document(selected_visual_take["take_id"], data)
+                    visual_take_document = self._visual_take_document(selected_visual_take["take_id"], data, sequence_units)
                 except WorkbenchError:
                     pass
             segments = []
-            for index, segment in enumerate(data["segments"]):
+            sequence_by_id = {unit["id"]: unit for unit in sequence_units}
+            for segment in data["segments"]:
                 segment_id = segment["id"]
+                if segment_id not in sequence_by_id:
+                    continue
                 selected = data["selected_takes"].get(segment_id)
                 status = segment.get("status", "active")
                 issue = None
@@ -271,7 +280,7 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                     segment_id, work if isinstance(work, dict) else {},
                 )
                 segments.append({
-                    "position": index + 1,
+                    "position": sequence_by_id[segment_id]["position"],
                     "id": segment_id,
                     "title": segment.get("title", segment_id),
                     "text": segment["text"],
@@ -281,6 +290,7 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                     "generation_state": generation_state,
                     "generation_detail": issue if status == "active" and selected and issue else None,
                     "duration_seconds": duration_seconds,
+                    "planned_duration_seconds": sequence_by_id.get(segment_id, {}).get("duration_seconds"),
                     "has_selected_take": bool(selected),
                     "audio_url": f"/api/audio/segment/{segment_id}" if selected else None,
                     "takes": self._segment_takes(data, segment),
@@ -296,14 +306,26 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                 and data.get("segments_sha256") == narration.segments_array_sha256(data)
                 and self._assembly_matches_manifest(data, assembled)
             )
+            for unit in sequence_units:
+                if unit["kind"] != "visual_only":
+                    continue
+                segments.append({**unit, "text": "", "generation_state": "visual-only", "duration_seconds": None,
+                    "planned_duration_seconds": unit["duration_seconds"],
+                    "work": {"note": "", "suggestions": [], "requests": []},
+                    "visual_take_segment": self.visual_take_segment_payload(unit, visual_layer, visual_take_document)})
+            segments.sort(key=lambda item: item["position"])
             return {
                 "project": data["project"],
                 "project_status": data.get("project_status", "in_progress"),
                 "manifest_hash": manifest_digest,
+                "sequence_hash": sequence_hash,
+                "sequence_units": sequence_units,
+                "unlinked_narration_ids": unlinked,
+                "sequence_order_conflict": sequence_order_conflict,
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
                 "visual_recipes": visual_recipes,
                 "visual_layer": visual_layer,
-                "music_layer": self.project_music_layer_payload(data),
+                "music_layer": self.project_music_layer_payload(data, sequence_units),
                 "tts_defaults": {key: value for key, value in data["settings"].items() if key in MAX_TTS_VALUES},
                 "pause_ms": data["settings"].get("pause_ms", 350),
                 "segments": segments,
@@ -323,11 +345,22 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                 self._check_manifest_hash(expected_hash, current_hash)
                 index, segment = self.find_segment(data, segment_id)
                 self.find_segment(data, target_id)
+                sequence, _ = self.read_sequence(data)
+                if not {segment_id, target_id}.issubset({unit["id"] for unit in sequence["units"]}):
+                    raise WorkbenchError("Link both narration segments in the sequence before reordering.", 409)
                 data["segments"].pop(index)
                 target_index, _ = self.find_segment(data, target_id)
                 data["segments"].insert(target_index + (placement == "after"), segment)
                 self._validate_candidate(data)
+                source = next(i for i, unit in enumerate(sequence["units"]) if unit["id"] == segment_id)
+                moved = sequence["units"].pop(source)
+                target = next(i for i, unit in enumerate(sequence["units"]) if unit["id"] == target_id)
+                sequence["units"].insert(target + (placement == "after"), moved)
                 self._write_manifest(data, current_hash)
+                try:
+                    atomic_write_json(self._sequence_path(), sequence)
+                except OSError as exc:
+                    raise WorkbenchError("Narration order saved, but sequence order could not be saved. Reload and reconcile before playback.", 500) from exc
                 return self.state_payload()
         finally:
             self.manifest_operation_lock.release()
@@ -346,6 +379,9 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                 data, current_hash = self.read_manifest()
                 self._check_manifest_hash(expected_hash, current_hash)
                 index, _ = self.find_segment(data, after_id)
+                sequence, _ = self.read_sequence(data)
+                if after_id not in {unit["id"] for unit in sequence["units"]}:
+                    raise WorkbenchError("Link the selected narration beat before adding another after it.", 409)
                 normalized = unicodedata.normalize("NFKD", title.strip()).encode("ascii", "ignore").decode("ascii").lower()
                 base = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")[:32].rstrip("-") or "new-beat"
                 existing = {segment["id"] for segment in data["segments"]}
@@ -361,7 +397,14 @@ class Project(NarrationRequestsMixin, VisualPlanMixin, AudioLayerMappingMixin, A
                     "text": spoken, "text_sha256": text_hash(spoken),
                 })
                 self._validate_candidate(data)
+                sequence_index = next(i for i, unit in enumerate(sequence["units"]) if unit["id"] == after_id)
+                sequence["units"].insert(sequence_index + 1, {"id": segment_id, "kind": "narration",
+                    "narration_segment_id": segment_id, "duration_seconds": round(max(1.0, len(spoken.split()) / 2.5), 3)})
                 self._write_manifest(data, current_hash)
+                try:
+                    atomic_write_json(self._sequence_path(), sequence)
+                except OSError as exc:
+                    raise WorkbenchError("Narration beat saved, but sequence link could not be saved. Reload and link the new beat explicitly.", 500) from exc
                 return {"segment_id": segment_id, "state": self.state_payload()}
         finally:
             self.manifest_operation_lock.release()

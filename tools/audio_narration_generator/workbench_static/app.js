@@ -20,7 +20,7 @@ const notePresets = {
   opening: "Suggest a stronger opening line for this segment that fits what comes before and after it. Keep the rest close to my intent."
 };
 const visualPresets = {
-  suggest: "Suggest an original visual treatment for this segment that supports the spoken words. Choose suitable elements, motion, and renderer; do not assume an existing library entry.",
+  suggest: "Suggest an original visual treatment for this sequence unit that supports its purpose and any spoken words. Choose suitable elements, motion, and renderer; do not assume an existing library entry.",
   text: "Create a text-only visual treatment for this segment. Use typography, composition, and motion to make the key idea clear without stock footage or a required library asset.",
   process: "Show the concrete process described in this segment. Make the steps legible and time the visual changes to the narration.",
   different: "Create a distinct new visual candidate for this segment within the selected whole-video take. Explore a different style or motion approach without overwriting earlier requests or results.",
@@ -52,6 +52,7 @@ async function request(path, body) {
 
 function escapeText(value) { return String(value ?? ""); }
 function currentSegment() { return state.project?.segments.find((item) => item.id === state.selectedId); }
+function spokenSegments() { return (state.project?.segments || []).filter((item) => item.kind !== "visual_only"); }
 function countWords(text) { return (text.trim().match(/\S+/g) || []).length; }
 
 function manifestLabel(key) {
@@ -129,11 +130,13 @@ function renderLayerPanels(segment) {
   const position = segment ? String(segment.position).padStart(2, "0") : null;
   $("shared-narration-position").textContent = segment
     ? "Beat " + position + " · " + (segment.title || segment.id)
-    : "No narration segment selected";
+    : "No sequence unit selected";
+  if (segment?.kind === "visual_only") $("shared-narration-position").textContent = `Visual ${position} · ${segment.title}`;
   $("shared-narration-id").textContent = segment ? segment.id : "—";
   $("visual-beat-label").textContent = segment
     ? "Beat " + position + " · " + segment.id
     : "Visual for selected segment";
+  if (segment?.kind === "visual_only") $("visual-beat-label").textContent = `Visual ${position} · ${segment.id}`;
   renderVisualTake(segment);
   renderMusicLayer();
 }
@@ -504,12 +507,13 @@ function updateDirtyState() {
   $("save-state").textContent = invalidTts ? "Check speech settings" : dirty ? "Unsaved changes" : "Saved";
   $("save-state").classList.toggle("dirty", dirty);
   $("save-segment").disabled = state.busy || !dirty || invalidTts;
-  $("create-narration-request").disabled = state.busy || dirty || !currentSegment() || !$("editorial-note").value.trim();
-  $("refresh-narration-requests").disabled = state.busy || !currentSegment();
-  $("generate-take").disabled = state.busy || dirty || currentSegment()?.status !== "active";
+  $("create-narration-request").disabled = state.busy || dirty || !currentSegment() || currentSegment()?.kind === "visual_only" || !$("editorial-note").value.trim();
+  $("refresh-narration-requests").disabled = state.busy || !currentSegment() || currentSegment()?.kind === "visual_only";
+  $("generate-take").disabled = state.busy || dirty || currentSegment()?.kind === "visual_only" || currentSegment()?.status !== "active";
   $("assemble-audio").disabled = state.busy || dirty;
-  $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active");
-  $("play-sapi-sequence").disabled = !state.sapiSequenceActive && (state.busy || !state.previewAvailable || dirty || isNoteDirty() || !state.project?.segments.some((item) => item.status === "active"));
+  const sequenceNeedsReview = state.project?.sequence_order_conflict || state.project?.unlinked_narration_ids?.length;
+  $("play-active-narration").disabled = state.busy || dirty || isNoteDirty() || sequenceNeedsReview || !spokenSegments().some((item) => item.status === "active");
+  $("play-sapi-sequence").disabled = !state.sapiSequenceActive && (state.busy || !state.previewAvailable || dirty || isNoteDirty() || sequenceNeedsReview || !spokenSegments().some((item) => item.status === "active"));
   $("move-beat-up").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, -1);
   $("move-beat-down").disabled = state.busy || dirty || isNoteDirty() || !reorderTarget(state.selectedId, 1);
   $("note-status").textContent = isNoteDirty() ? "Unsaved note" : "Saved in temporary work queue";
@@ -527,6 +531,83 @@ function reorderTarget(id, direction) {
   const index = visible.findIndex((segment) => segment.id === id);
   if (index < 0) return null;
   return visible[index + direction]?.id || null;
+}
+
+function renderSequenceControls() {
+  if (!$("sequence-unit-controls")) return;
+  const unit = currentSegment();
+  const controls = $("sequence-unit-controls");
+  controls.hidden = !unit;
+  if (unit) {
+    $("sequence-duration").value = unit.planned_duration_seconds;
+    const visual = unit.kind === "visual_only";
+    for (const id of ["sequence-title", "sequence-note", "sequence-title-label", "sequence-note-label"]) $(id).hidden = !visual;
+    if (visual) {
+      $("sequence-title").value = unit.title;
+      $("sequence-note").value = unit.note || "";
+    }
+    $("sequence-move-up").disabled = !reorderTarget(unit.id, -1);
+    $("sequence-move-down").disabled = !reorderTarget(unit.id, 1);
+  }
+  const missing = state.project?.unlinked_narration_ids || [];
+  const warning = $("sequence-warning");
+  warning.hidden = missing.length === 0 && !state.project?.sequence_order_conflict;
+  warning.textContent = [missing.length ? `Narration IDs not yet in the sequence: ${missing.join(", ")}. Link them before using them in the video.` : "",
+    state.project?.sequence_order_conflict ? "Speech order differs from the story sequence. Narration playback is paused until you sync it." : ""].filter(Boolean).join(" ");
+  for (const id of missing) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `Add ${id} to end`;
+    button.addEventListener("click", () => editSequence("link", { unit_id: id, duration_seconds: 3 }));
+    warning.append(button);
+  }
+  $("reconcile-sequence").hidden = !state.project?.sequence_order_conflict || missing.length > 0;
+}
+
+async function editSequence(action, body) {
+  if (state.busy || isDirty() || isNoteDirty()) return toast("Save narration changes before editing the sequence.");
+  try {
+    setBusy(true);
+    const result = await request(`/api/sequence/${action}`, { ...body, sequence_hash: state.project.sequence_hash });
+    state.project = result.state;
+    state.manifestHash = result.state.manifest_hash;
+    renderProject();
+    toast("Sequence saved.");
+  } catch (error) { toast(error.message); }
+  finally { setBusy(false); }
+}
+
+async function addVisualUnit(event) {
+  event.preventDefault();
+  const id = $("new-visual-id").value.trim();
+  const duration = Number($("new-visual-duration").value);
+  const afterId = state.selectedId;
+  await editSequence("add", { unit_id: id, after_id: afterId, title: $("new-visual-title").value.trim(),
+    duration_seconds: duration, note: $("new-visual-note").value });
+  if (state.project?.segments.some((item) => item.id === id)) {
+    $("add-visual-dialog").close();
+    state.selectedId = id;
+    renderProject();
+  }
+}
+
+function saveSequenceUnit() {
+  const unit = currentSegment();
+  if (!unit) return;
+  const updates = { duration_seconds: Number($("sequence-duration").value) };
+  if (unit.kind === "visual_only") {
+    updates.title = $("sequence-title").value.trim();
+    updates.note = $("sequence-note").value;
+  }
+  editSequence("update", { unit_id: unit.id, updates });
+}
+
+function moveSequenceUnit(direction) {
+  const target = reorderTarget(state.selectedId, direction);
+  if (!target) return;
+  $("assembly-audio").pause();
+  $("sapi-audio").pause();
+  editSequence("move", { unit_id: state.selectedId, target_id: target, placement: direction < 0 ? "before" : "after" });
 }
 
 function renderSegmentList() {
@@ -549,11 +630,11 @@ function renderSegmentList() {
     const title = document.createElement("strong");
     title.textContent = segment.title || segment.id;
     const meta = document.createElement("small");
-    const status = segment.status === "active" ? segment.generation_state === "ready" ? "Take ready" : "Take needed" : segment.status;
-    meta.textContent = `${segment.id} · ${status}`;
+    const status = segment.kind === "visual_only" ? "Visual only" : segment.status === "active" ? segment.generation_state === "ready" ? "Take ready" : "Take needed" : segment.status;
+    meta.textContent = `${segment.id} · ${status} · ${segment.planned_duration_seconds}s`;
     copy.append(title, meta);
     const dot = document.createElement("span");
-    dot.className = `segment-status-dot${segment.generation_state === "take-needed" ? " needs" : ""}${segment.status === "inactive" ? " inactive" : ""}${segment.status === "deleted" ? " deleted" : ""}`;
+    dot.className = `segment-status-dot${segment.kind === "visual_only" ? " visual-only" : ""}${segment.generation_state === "take-needed" ? " needs" : ""}${segment.status === "inactive" ? " inactive" : ""}${segment.status === "deleted" ? " deleted" : ""}`;
     button.append(seq, copy, dot);
     button.addEventListener("click", () => selectSegment(segment.id));
     const insert = document.createElement("button");
@@ -562,12 +643,14 @@ function renderSegmentList() {
     insert.textContent = "+";
     insert.title = `Add a beat after ${segment.title || segment.id}`;
     insert.setAttribute("aria-label", insert.title);
-    insert.disabled = state.busy;
+    insert.disabled = state.busy || segment.kind === "visual_only";
+    insert.hidden = segment.kind === "visual_only";
     insert.addEventListener("click", () => openInsertBeat(segment.id));
     li.append(button, insert);
     list.append(li);
   }
   $("segment-count").textContent = String(visible.length);
+  renderSequenceControls();
 }
 
 function renderVoiceStyles(segment) {
@@ -950,13 +1033,22 @@ function renderEditor() {
   const editor = $("editor");
   const empty = $("empty-state");
   renderLayerPanels(segment);
-  if (!segment) {
+  if (!segment || segment.kind === "visual_only") {
     editor.hidden = true;
     empty.hidden = false;
+    $("empty-state-heading").textContent = segment ? "Visual-only unit" : "No sequence unit selected";
+    $("empty-state-message").textContent = segment
+      ? "This unit has no spoken words or audio take. Use the Visual Layer for requests and the Sequence panel for its duration and order."
+      : "Choose a unit from the sequence.";
+    document.querySelector(".review-panel").hidden = !!segment;
+    state.baseline = null;
+    state.noteBaseline = null;
+    updateDirtyState();
     $("move-beat-up").disabled = true;
     $("move-beat-down").disabled = true;
     return;
   }
+  document.querySelector(".review-panel").hidden = false;
   editor.hidden = false;
   empty.hidden = true;
   $("segment-position").textContent = `BEAT ${String(segment.position).padStart(2, "0")}`;
@@ -1101,7 +1193,7 @@ async function playSapiSequence() {
   if (!audio.paused && !audio.error) return audio.pause();
   if (state.busy || !state.previewAvailable) return;
   if (isDirty() || isNoteDirty()) return toast("Save your segment and note before previewing the sequence.");
-  const active = state.project?.segments.filter((segment) => segment.status === "active") || [];
+  const active = spokenSegments().filter((segment) => segment.status === "active");
   if (!active.length) return toast("Add an active beat before previewing.");
   $("assembly-audio").pause();
   if (!state.sapiTimeline.length || state.sapiManifestHash !== state.project.manifest_hash) {
@@ -1173,7 +1265,7 @@ function syncSapiBeat() {
 }
 
 function buildPlaybackTimeline() {
-  const active = state.project.segments.filter((segment) => segment.status === "active");
+  const active = spokenSegments().filter((segment) => segment.status === "active");
   if (!active.length || active.some((segment) => !Number.isFinite(segment.duration_seconds) || segment.duration_seconds <= 0)) return [];
   const pause = Math.max(0, Number(state.project.pause_ms) || 0) / 1000;
   let cursor = 0;
@@ -1210,7 +1302,7 @@ async function playActiveNarration() {
   $("sapi-audio").pause();
   if (isDirty() || isNoteDirty()) return toast("Save your segment and note before playing the active narration.");
 
-  let active = state.project?.segments.filter((segment) => segment.status === "active") || [];
+  let active = spokenSegments().filter((segment) => segment.status === "active");
   if (!active.length) return toast("Add an active beat before creating a narration preview.");
   let needsTakes = active.some((segment) => segment.generation_state !== "ready");
   let needsAssembly = !state.project.assembly_current || !state.project.assembled_audio_url;
@@ -1231,7 +1323,7 @@ async function playActiveNarration() {
         }
         showOutput(lastResult.ok ? "Take generation complete" : "Take generation failed", lastResult);
         if (!lastResult.ok) throw new Error("Some narration takes could not be generated. See F5-TTS for details.");
-        active = state.project.segments.filter((segment) => segment.status === "active");
+        active = spokenSegments().filter((segment) => segment.status === "active");
         if (active.some((segment) => segment.generation_state !== "ready")) {
           throw new Error("Some active beats still need a valid take. See F5-TTS for details.");
         }
@@ -1358,24 +1450,7 @@ async function insertBeat(event) {
 }
 
 async function moveSegment(id, direction) {
-  if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before moving a beat.");
-  const targetId = reorderTarget(id, direction);
-  if (!targetId) return;
-  $("assembly-audio").pause();
-  $("sapi-audio").pause();
-  try {
-    setBusy(true);
-    const result = await request("/api/segments/reorder", {
-      segment_id: id, target_id: targetId,
-      placement: direction < 0 ? "before" : "after", manifest_hash: state.manifestHash,
-    });
-    state.project = result.state;
-    state.manifestHash = result.state.manifest_hash;
-    state.selectedId = id;
-    renderProject();
-    toast("Beat order saved. The assembled narration needs a refresh.");
-  } catch (error) { toast(error.message); }
-  finally { setBusy(false); }
+  moveSequenceUnit(direction);
 }
 
 async function saveSegment() {
@@ -1574,6 +1649,18 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  $("add-visual-unit").addEventListener("click", () => {
+    if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before adding a visual unit.");
+    $("add-visual-form").reset();
+    $("new-visual-duration").value = "3";
+    $("add-visual-dialog").showModal();
+  });
+  $("cancel-add-visual").addEventListener("click", () => $("add-visual-dialog").close());
+  $("add-visual-form").addEventListener("submit", addVisualUnit);
+  $("save-sequence-unit").addEventListener("click", saveSequenceUnit);
+  $("sequence-move-up").addEventListener("click", () => moveSequenceUnit(-1));
+  $("sequence-move-down").addEventListener("click", () => moveSequenceUnit(1));
+  $("reconcile-sequence").addEventListener("click", () => editSequence("reconcile", {}));
   document.querySelectorAll("[data-note-preset]").forEach((button) => button.addEventListener("click", () => {
     addPromptStarter($("editorial-note"), notePresets[button.dataset.notePreset]);
   }));

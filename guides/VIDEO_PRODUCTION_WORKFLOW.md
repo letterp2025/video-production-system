@@ -17,7 +17,7 @@ Use the same approach for a new project:
 5. Listen to individual lines for pronunciation and delivery, then listen to the assembled narration for flow and runtime. Adjust the words and listen again. Select the take you want for assembly in each segment; the manifest records that selection, while ratings and notes record how alternate takes sounded.
 6. When the narration is clear enough to carry the story, save that as the current milestone. You can begin visuals and sound later, once the spoken spine is stable enough to guide them. This is a valid work-in-progress checkpoint; a finished video still needs its final HIGH render.
 
-The exact spoken words and segment order belong in `audio/narration_manifest.json`. A separate `SCRIPT.md` or `PRODUCTION_PLAN.md` can hold editorial notes, research, or a broader brief, but it is not a second source of truth for the words being generated.
+The exact spoken words and speech-only assembly order belong in `audio/narration_manifest.json`; the overall video story order belongs in `sequence_manifest.json`. A separate `SCRIPT.md` or `PRODUCTION_PLAN.md` can hold editorial notes, research, or a broader brief, but it is not a second source of truth for approved words.
 
 For another AI-assisted wording pass, write an editorial note in the workbench and choose **Create AI request JSON**. VPS saves the brief and a separate progress/result file under `audio/narration_requests/<stable-segment-id>/requests/<request-id>/`. A terminal Codex, Claude, or other assistant can find it from the project root with `rg --files --hidden --no-ignore -g 'request.json' audio/narration_requests`; no AI server is required. VPS imports a completed result only after **Refresh AI results**. The proposal changes no spoken text until you explicitly accept it; acceptance replaces that segment's `text` in `audio/narration_manifest.json`, while preserving its stable ID. See the [narration request and result contract](../tools/audio_narration_generator/README.md#request-and-result-examples) for JSON examples, status values, and safeguards.
 
@@ -52,6 +52,7 @@ The project root is the folder containing `video_project.json` and `audio/`. The
 ```text
 effectcraft-introduction-01/
 |-- video_project.json                 # creative identity, inspirations, outline, status notes
+|-- sequence_manifest.json             # ordered video units and planned durations
 |-- README.md                          # project status and links (optional)
 |-- SCRIPT.md                          # research/editorial notes (optional)
 |-- PRODUCTION_PLAN.md                 # broader brief or history (optional)
@@ -91,15 +92,24 @@ This is an illustrative layout, not a list of folders VPS pre-creates. A project
 
 | Layer | Source of truth | What it contains |
 |---|---|---|
-| Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable segment IDs, spoken order and approved text, voice settings, selected narration takes, and separate AI request/result records for wording suggestions. |
-| Visual and candidate SFX | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and `visual_layer/<take-id>/segments/<segment-id>/requests/<request-id>/` | A take describes one direction across the full narration spine. Each segment can keep multiple independent visual requests; request/result JSON track the brief and handoff, with implementation and exported segment assets owned by the project. Optional SFX planning belongs to the visual candidate it supports. |
+| Story sequence | `sequence_manifest.json` | Canonical video order: narration-linked and visual-only units, stable IDs, and editable planned durations. |
+| Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable narration IDs, speech-only playback order and approved text, voice settings, selected takes, and AI wording requests/results. |
+| Visual and candidate SFX | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and `visual_layer/<take-id>/segments/<unit-id>/requests/<request-id>/` | A take describes one direction across the video sequence. Each unit can keep multiple independent visual requests; implementation/export assets remain project-owned. Optional SFX planning belongs to the visual candidate it supports. |
 | Music | `audio/music/manifest.json` | One project-wide list. Each item starts at the beginning of its `start_segment_id` and ends at the end of its `end_segment_id`; optional asset paths refer to project files. |
 | Project identity and direction | `video_project.json` | User- and AI-facing creative brief, rough narration outline, inspirations, and manually maintained project-status context. |
 | Final video | Chosen NLE/production-tool project and `render/HIGH/` output | The NLE or production renderer assembles, mixes, and renders; VPS prepares assets and planning handoff information rather than acting as an NLE. |
 
+### Story sequence and visual-only intervals
+
+When the workbench first opens a project without `sequence_manifest.json`, it creates one from all existing narration IDs in their current order, including inactive/deleted records. The narration manifest and existing take files are not overwritten. Each unit has a positive `duration_seconds`: the workbench uses a measured selected WAV length when available, otherwise an editable speech estimate. New visual-only units default to three seconds. These are planning targets, not frame-accurate edit points; review timing in the NLE.
+
+The left **Sequence** rail shows both kinds in one story order. Use **Add visual-only unit** for a silent opening, montage, pause, or outro; give it a unique stable ID, title, duration, and optional note. It creates no blank narration segment or voice take. Select a unit to edit its planned duration or move it; visual-only units also allow title/note edits. Narration titles and spoken words remain in `audio/narration_manifest.json`. The Script and Narration tab shows a no-narration state for a visual-only selection; SAPI/F5 playback covers speech only and skips visual-only intervals. When the video order of spoken units changes, VPS syncs the narration array for playback. If an external edit leaves the two orders different, VPS warns and pauses narration playback until you explicitly sync them.
+
+Visual take entries and request folders use the selected sequence-unit ID for either kind. An existing take can acquire a visual-only entry when you make its first request, without rewriting earlier requests. Visual-only requests use a separate `source_unit_sha256` revision derived from title, note, and planned duration; narration requests keep `source_text_sha256`. Music's existing `start_segment_id` and `end_segment_id` fields still work, but now refer to sequence-unit IDs, so music can start or end on a visual-only unit. A malformed existing sequence is reported and preserved, not replaced. The sequence JSON itself is the readable order/duration handoff for a downstream NLE; VPS still does not assemble the final video.
+
 ## Continue from narration into the other layers
 
-### Visual Layer: alternatives for the whole narration spine
+### Visual Layer: alternatives for the whole video sequence
 
 Create a visual take when you are ready to explore how the video should look. A take is one alternative direction across the whole narration spine. For example, `v_layer_1` could try a retro treatment across the video, while `v_layer_2` tries a different overall treatment. Within a take, each segment can have repeated visual requests (`VIS-001`, `VIS-002`, …), so you can explore or revise that segment without replacing earlier attempts or creating another whole-video take. The take manifest tracks segment requests and which completed candidate is selected for each segment.
 
@@ -107,7 +117,7 @@ Each take manifest combines the creative direction with an index keyed by stable
 
 In **Visual Layer**, select or create a take, select a segment by its stable ID, and add a visual request. VPS creates that request's `request.json` brief and `result.json` scaffold under the project. Use terminal Codex (or another AI assistant) to read the request, create the implementation and segment export, and update the paired result. Refresh the workbench to see its status. VPS never auto-launches Codex or executes renderer code. The Visual Library Browser is optional and read-only; it contributes references and notes to the request, not copied or executed library code. See the [Visual Layer guide](../tools/audio_narration_generator/README.md#whole-spine-visual-takes) and [Segment Layers and Workbench Layout task order](../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the full workflow.
 
-The v2 result record preserves the take ID, segment ID, request ID, and source-text hash from its scaffold. Keep status current (`requested`, `in_progress`, `completed`, or `failed`) and update `updated_at`; completed work also needs `completed_at` and an existing exported segment file. `implementation_path`, `preview_path`, and `export_path` must be project-relative, remain inside that request folder, and point to existing outputs (implementation may be a file or folder; preview and export are files). A completed candidate can be selected only when its export validates and its source-text hash still matches the narration. The UI surfaces invalid records and legacy v1 results; new requests always use v2. See [`visual_result.schema.json`](../tools/audio_narration_generator/visual_result.schema.json) and the [detailed contract and example](../tools/audio_narration_generator/README.md#whole-spine-visual-takes).
+Narration-linked results retain the v2 source-text contract. Visual-only requests use `source_unit_sha256` and a v3 result; see the [visual-only result schema](../tools/audio_narration_generator/visual_result_visual_only.schema.json). In both cases keep status current (`requested`, `in_progress`, `completed`, or `failed`) and update `updated_at`; completed work also needs `completed_at` and an existing exported segment file. Output paths must be project-relative and inside that request folder. VPS validates these before allowing a candidate to be selected.
 
 ### Project-wide music and candidate-specific sound effects
 

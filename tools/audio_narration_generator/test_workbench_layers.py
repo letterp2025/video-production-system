@@ -48,6 +48,88 @@ class LayerProjectTest(unittest.TestCase):
         digest = self.project.state_payload()["manifest_hash"]
         return self.project.create_visual_take(take_id, take_id.replace("_", " ").title(), "A coherent visual treatment across the full narration spine.", digest)
 
+    def test_sequence_visual_only_requests_music_and_order(self):
+        self.create_take()
+        original = self.project.state_payload()
+        self.assertEqual([unit["id"] for unit in original["sequence_units"]], ["opening-hook", "next-beat", "inactive-beat"])
+        added = self.project.edit_sequence("add", {"sequence_hash": original["sequence_hash"], "unit_id": "title-card",
+            "after_id": None, "title": "Title card", "duration_seconds": 3.0, "note": "Silent retro reveal"})["state"]
+        self.assertEqual(added["segments"][0]["kind"], "visual_only")
+        self.assertEqual(added["segments"][0]["planned_duration_seconds"], 3.0)
+        self.assertEqual(len(self.project.read_manifest()[0]["segments"]), 3)
+        self.assertEqual(added["visual_layer"]["selected_take"]["active_segment_count"], 3)
+        first = self.project.create_visual_request("title-card", "Draw a retro title", None, [], added["manifest_hash"])
+        second = self.project.create_visual_request("title-card", "Try another palette", None, [], added["manifest_hash"])
+        self.assertEqual((first["request_id"], second["request_id"]), ("VIS-001", "VIS-002"))
+        folder = self.root / "visual_layer" / "v_layer_1" / "segments" / "title-card" / "requests" / "VIS-001"
+        brief = json.loads((folder / "request.json").read_text(encoding="utf-8"))
+        result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual((brief["schema_version"], result["schema_version"]), (2, 3))
+        self.assertEqual(result["source_unit_sha256"], brief["source_unit_sha256"])
+        self.project.create_visual_sfx("title-card", "VIS-001")
+        self.assertTrue((folder / "sfx.json").exists())
+        export = folder / "exports" / "card.mp4"
+        export.parent.mkdir()
+        export.write_bytes(b"test")
+        result.update({"status": "completed", "export_path": export.relative_to(self.root).as_posix(),
+                       "updated_at": "2026-11-24T10:00:00+00:00", "completed_at": "2026-11-24T10:00:00+00:00"})
+        (folder / "result.json").write_text(json.dumps(result), encoding="utf-8")
+        selected = self.project.select_visual_request("title-card", "VIS-001")
+        self.assertEqual(selected["segments"][0]["visual_take_segment"]["status"], "saved")
+        music_path = self.audio / "music" / "manifest.json"
+        self.project.create_project_music_manifest(added["manifest_hash"])
+        music_path.write_text(json.dumps({"schema_version": 1, "layer": "music", "items": [
+            {"id": "intro", "title": "Intro theme", "start_segment_id": "title-card", "end_segment_id": "next-beat"}
+        ]}), encoding="utf-8")
+        music = self.project.state_payload()["music_layer"]
+        self.assertEqual(music["status"], "saved")
+        self.assertEqual(music["items"][0]["start_segment_title"], "Title card")
+        before = self.project.state_payload()
+        changed = self.project.edit_sequence("update", {"sequence_hash": before["sequence_hash"], "unit_id": "title-card",
+            "updates": {"duration_seconds": 4.0, "note": "Longer reveal"}})["state"]
+        self.assertEqual(changed["segments"][0]["visual_take_segment"]["status"], "needs_review")
+        moved = self.project.edit_sequence("move", {"sequence_hash": changed["sequence_hash"], "unit_id": "title-card",
+            "target_id": "opening-hook", "placement": "after"})["state"]
+        self.assertEqual(moved["sequence_units"][1]["id"], "title-card")
+        self.assertEqual([item["id"] for item in self.project.read_manifest()[0]["segments"]],
+                         ["opening-hook", "next-beat", "inactive-beat"])
+
+    def test_sequence_invalid_file_is_not_replaced(self):
+        self.project.ensure_sequence_manifest()
+        path = self.root / "sequence_manifest.json"
+        path.write_text('{"schema_version":1,"units":[{"id":"broken"}]}', encoding="utf-8")
+        original = path.read_bytes()
+        with self.assertRaisesRegex(workbench.WorkbenchError, "not replaced"):
+            self.project.ensure_sequence_manifest()
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_external_sequence_order_change_requires_explicit_reconciliation(self):
+        initial = self.project.state_payload()
+        path = self.root / "sequence_manifest.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["units"][0], document["units"][1] = document["units"][1], document["units"][0]
+        path.write_text(json.dumps(document), encoding="utf-8")
+        changed = self.project.state_payload()
+        self.assertTrue(changed["sequence_order_conflict"])
+        self.assertEqual([item["id"] for item in self.project.read_manifest()[0]["segments"]][:2],
+                         ["opening-hook", "next-beat"])
+        reconciled = self.project.edit_sequence("reconcile", {"sequence_hash": changed["sequence_hash"]})["state"]
+        self.assertFalse(reconciled["sequence_order_conflict"])
+        self.assertEqual([item["id"] for item in self.project.read_manifest()[0]["segments"]][:2],
+                         ["next-beat", "opening-hook"])
+
+    def test_sequence_rejects_duplicate_ids_invalid_durations_and_stale_edits(self):
+        state = self.project.state_payload()
+        for unit_id, duration in [("opening-hook", 3), ("new-card", 0), ("new-card", float("nan"))]:
+            with self.assertRaises(workbench.WorkbenchError):
+                self.project.edit_sequence("add", {"sequence_hash": state["sequence_hash"], "unit_id": unit_id,
+                    "after_id": None, "title": "Card", "duration_seconds": duration})
+        self.project.edit_sequence("add", {"sequence_hash": state["sequence_hash"], "unit_id": "new-card",
+            "after_id": None, "title": "Card", "duration_seconds": 3})
+        with self.assertRaisesRegex(workbench.WorkbenchError, "changed elsewhere"):
+            self.project.edit_sequence("update", {"sequence_hash": state["sequence_hash"], "unit_id": "new-card",
+                "updates": {"duration_seconds": 4}})
+
     def test_repeatable_requests_candidate_selection_and_sfx_stay_in_take(self):
         self.create_take("v_layer_1")
         self.project.catalog = mock.Mock()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 import re
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -20,6 +21,18 @@ REQUEST_ID_PATTERN = re.compile(r"VIS-[0-9]{3,6}\Z")
 MUSIC_ITEM_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 RENDERERS = {"effectcraft", "manim", "gsap"}
 MAPPING_LAYERS = {"music", "sfx"}
+
+
+def visual_source_hash(unit: dict[str, Any]) -> str:
+    """Keep narration and visual-only revision domains distinct."""
+    if unit.get("kind") == "visual_only":
+        return text_hash(json.dumps({"title": unit["title"], "note": unit.get("note", ""),
+                                     "duration_seconds": unit["duration_seconds"]}, sort_keys=True))
+    return text_hash(unit["text"])
+
+
+def visual_source_field(unit: dict[str, Any]) -> str:
+    return "source_unit_sha256" if unit.get("kind") == "visual_only" else "source_text_sha256"
 
 
 def project_relative_path(project_root: Path, value: Any, label: str) -> str:
@@ -86,16 +99,17 @@ def validate_visual_take(
     segments = value.get("segments")
     if not isinstance(segments, dict) or len(segments) > MAX_LAYER_ENTRIES:
         raise ValueError("Visual take segments must be a JSON object with a supported number of entries.")
-    known_ids = {segment["id"] for segment in narration_segments}
+    known = {segment["id"]: segment for segment in narration_segments}
     for segment_id, entry in segments.items():
         if not isinstance(segment_id, str) or not narration.ID_PATTERN.fullmatch(segment_id):
             raise ValueError("A visual take contains an invalid narration segment ID.")
-        if segment_id not in known_ids:
-            raise ValueError(f"Visual take references unknown narration segment {segment_id}.")
+        if segment_id not in known:
+            raise ValueError(f"Visual take references unknown sequence unit {segment_id}.")
+        source_field = visual_source_field(known[segment_id])
         if not isinstance(entry, dict) or not {
-            "visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference",
+            "visual_intent", source_field, "renderer", "implementation", "library_reference",
         }.issubset(entry) or not set(entry).issubset({
-            "visual_intent", "source_text_sha256", "renderer", "implementation", "library_reference",
+            "visual_intent", source_field, "renderer", "implementation", "library_reference",
             "request_ids", "selected_request_id",
         }):
             raise ValueError(f"Visual entry {segment_id} has invalid fields.")
@@ -109,9 +123,9 @@ def validate_visual_take(
         intent = entry.get("visual_intent")
         if not isinstance(intent, str) or len(intent) > MAX_TEXT_CHARS:
             raise ValueError(f"Visual intent for {segment_id} is invalid.")
-        digest = entry.get("source_text_sha256")
+        digest = entry.get(source_field)
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-            raise ValueError(f"Visual source-text hash for {segment_id} is invalid.")
+            raise ValueError(f"Visual source hash for {segment_id} is invalid.")
         renderer = entry.get("renderer")
         if renderer is not None and (not isinstance(renderer, str) or renderer not in RENDERERS):
             raise ValueError(f"Visual renderer for {segment_id} must be effectcraft, manim, gsap, or null.")
@@ -142,7 +156,7 @@ def validate_visual_take(
 def visual_segment_status(entry: dict[str, Any] | None, segment: dict[str, Any], project_root: Path) -> str:
     if entry is None:
         return "pending"
-    if entry["source_text_sha256"] != text_hash(segment["text"]):
+    if entry[visual_source_field(segment)] != visual_source_hash(segment):
         return "needs_review"
     if entry.get("selected_request_id"):
         return "saved"
@@ -200,7 +214,7 @@ def validate_project_music_manifest(
     narration_segments: list[dict[str, Any]],
     project_root: Path,
 ) -> dict[str, Any]:
-    """Validate project-wide music items anchored to stable narration IDs."""
+    """Validate project-wide music items anchored to stable sequence IDs."""
     if not isinstance(value, dict) or set(value) != {"schema_version", "layer", "items"}:
         raise ValueError("A project Music manifest must contain schema_version, layer, and items.")
     if value.get("schema_version") != 1 or isinstance(value.get("schema_version"), bool):
@@ -229,9 +243,9 @@ def validate_project_music_manifest(
             raise ValueError(f"Music item {item_id} needs a title of 1 to {MAX_TITLE_CHARS} characters.")
         start_id, end_id = item["start_segment_id"], item["end_segment_id"]
         if not isinstance(start_id, str) or not isinstance(end_id, str) or start_id not in positions or end_id not in positions:
-            raise ValueError(f"Music item {item_id} references a narration ID that does not exist.")
+            raise ValueError(f"Music item {item_id} references a sequence ID that does not exist.")
         if positions[start_id] > positions[end_id]:
-            raise ValueError(f"Music item {item_id} ends before it starts in narration order.")
+            raise ValueError(f"Music item {item_id} ends before it starts in sequence order.")
         if "asset_path" in item and item["asset_path"] is not None:
             project_relative_path(project_root, item["asset_path"], f"Music item {item_id} asset_path")
         if "notes" in item and (not isinstance(item["notes"], str) or len(item["notes"]) > 4_000):
