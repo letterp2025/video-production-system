@@ -126,20 +126,61 @@ def write_json(path: Path, value: Any) -> None:
     temp.replace(path)
 
 
-def resolve_reference_audio(manifest_path: Path, value: str) -> Path:
+def resolve_reference_audio(reference_root: Path, value: str) -> Path:
     path = Path(value)
     if not path.is_absolute():
-        path = manifest_path.parent / path
+        path = reference_root / path
     return path.resolve()
 
 
+def project_default_voice(manifest_path: Path) -> dict[str, str] | None:
+    """Return the optional project-level voice profile, if configured."""
+    project_root = manifest_path.parent.parent
+    project_manifest_path = project_root / "video_project.json"
+    if project_manifest_path.is_symlink():
+        fail("The project manifest cannot be a symlink.")
+    try:
+        project_data = json.loads(project_manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail(f"Could not read project manifest {project_manifest_path}: {exc}")
+    if not isinstance(project_data, dict):
+        fail("The root video_project.json must contain a JSON object.")
+    narration_settings = project_data.get("narration", {})
+    if not isinstance(narration_settings, dict):
+        fail("video_project.json narration must be a JSON object.")
+    profile = narration_settings.get("default_voice")
+    if profile is None:
+        return None
+    if not isinstance(profile, dict):
+        fail("video_project.json narration.default_voice must be an object or null.")
+    if set(profile) - {"reference_audio", "reference_text"}:
+        fail("video_project.json narration.default_voice supports only reference_audio and reference_text.")
+    if not isinstance(profile.get("reference_audio"), str) or not profile["reference_audio"].strip():
+        fail("video_project.json narration.default_voice.reference_audio must be a path to the voice recording.")
+    if not isinstance(profile.get("reference_text"), str) or not profile["reference_text"].strip():
+        fail("video_project.json narration.default_voice.reference_text must contain the exact spoken words.")
+    return profile
+
+
+def project_root(manifest_path: Path) -> Path:
+    return manifest_path.parent.parent
+
+
 def segment_voice_profile(
-    segment: dict[str, Any], data: dict[str, Any],
-) -> tuple[str, dict[str, str]]:
+    segment: dict[str, Any], data: dict[str, Any], manifest_path: Path | None = None,
+) -> tuple[str, dict[str, str], Path]:
     style_name = segment.get("voice_style")
-    if style_name is None:
-        return "default", data["voice"]
-    return style_name, data["voice_styles"][style_name]
+    if style_name is not None:
+        base = manifest_path.parent if manifest_path is not None else Path.cwd()
+        return style_name, data["voice_styles"][style_name], base
+    if manifest_path is not None:
+        project_voice = project_default_voice(manifest_path)
+        if project_voice is not None:
+            return "project_default", project_voice, project_root(manifest_path)
+        return "default", data["voice"], manifest_path.parent
+    return "default", data["voice"], Path.cwd()
 
 
 def segment_tts_settings(segment: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -159,10 +200,10 @@ def generation_fingerprint(segment: dict[str, Any], data: dict[str, Any], manife
         "model_config": settings.get("model_config", "default F5-TTS config"),
         **segment_tts_settings(segment, data),
     }
-    _, voice = segment_voice_profile(segment, data)
+    _, voice, reference_root = segment_voice_profile(segment, data, manifest_path)
     fingerprint_data = {
         "segment_text": segment["text"],
-        "reference_audio": str(resolve_reference_audio(manifest_path, voice["reference_audio"])),
+        "reference_audio": str(resolve_reference_audio(reference_root, voice["reference_audio"])),
         "reference_text": voice["reference_text"],
         "settings": generation_settings,
     }
@@ -494,6 +535,7 @@ def main() -> int:
     audio_root = manifest_path.parent.resolve()
     project = data["project"]
     settings = data["settings"]
+    _, run_default_voice, _ = segment_voice_profile({"voice_style": None}, data, manifest_path)
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     if args.assemble_only and args.segments:
         fail("Use either --assemble-only or --segment, not both.")
@@ -593,7 +635,7 @@ def main() -> int:
         "started_local": datetime.now().astimezone().isoformat(timespec="seconds"),
         "f5_tts_version": None,
         "checkpoint": None,
-        "reference_audio_name": Path(data["voice"]["reference_audio"]).name,
+        "reference_audio_name": Path(run_default_voice["reference_audio"]).name,
         "settings": {
             "speed": settings.get("speed", 1.0),
             "pause_ms": settings.get("pause_ms", 350),
@@ -621,8 +663,8 @@ def main() -> int:
         if to_generate:
             reference_profiles: dict[str, tuple[str, dict[str, str], Path]] = {}
             for segment in to_generate:
-                voice_style, voice_profile = segment_voice_profile(segment, data)
-                reference_audio = resolve_reference_audio(manifest_path, voice_profile["reference_audio"])
+                voice_style, voice_profile, reference_root = segment_voice_profile(segment, data, manifest_path)
+                reference_audio = resolve_reference_audio(reference_root, voice_profile["reference_audio"])
                 if not reference_audio.is_file():
                     fail(f"Reference voice audio for {segment['id']} not found: {reference_audio}")
                 reference_profiles[segment["id"]] = (voice_style, voice_profile, reference_audio)

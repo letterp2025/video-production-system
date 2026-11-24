@@ -1,5 +1,6 @@
 """Small filesystem tests for incremental planning and completed-project cleanup."""
 
+import copy
 import json
 import subprocess
 import sys
@@ -337,6 +338,88 @@ class NarrationWorkflowTest(unittest.TestCase):
         receipt = json.loads(selected.with_suffix(".json").read_text(encoding="utf-8"))
         self.assertEqual(receipt["voice_style"], "hook_excited")
         self.assertEqual(receipt["reference_audio_name"], "hook-excited.wav")
+
+    def test_project_default_voice_overrides_manifest_fallback_and_segment_style_overrides_project(self):
+        project_root = self.root / "video-project"
+        audio_root = project_root / "audio"
+        audio_root.mkdir(parents=True)
+        manifest_path = audio_root / "narration_manifest.json"
+        data = copy.deepcopy(self.data)
+        data["voice_styles"] = {
+            "warm": {"reference_audio": "references/warm.wav", "reference_text": "Warm style words."}
+        }
+        data["voice"]["reference_audio"] = "references/legacy.wav"
+        data["voice"]["reference_text"] = "Legacy fallback words."
+        data["segments"][0]["voice_style"] = None
+        manifest_path.write_text(json.dumps(data), encoding="utf-8")
+        project_manifest_path = project_root / "video_project.json"
+        project_manifest = {
+            "narration": {
+                "default_voice": {
+                    "reference_audio": "references/project-default.wav",
+                    "reference_text": "Project voice words.",
+                }
+            }
+        }
+        project_manifest_path.write_text(json.dumps(project_manifest), encoding="utf-8")
+        for filename in ("project-default.wav", "legacy.wav"):
+            reference = project_root / "references" / filename
+            reference.parent.mkdir(parents=True, exist_ok=True)
+            reference.write_bytes(b"reference")
+        warm_reference = audio_root / "references" / "warm.wav"
+        warm_reference.parent.mkdir(parents=True, exist_ok=True)
+        warm_reference.write_bytes(b"reference")
+
+        engine = mock.Mock()
+        engine.preprocess_ref_audio_text.return_value = ("processed reference", "Project voice words.")
+        engine.infer_process.return_value = (np.zeros(240, dtype=np.float32), 24000, None)
+        args = ["tool", "--manifest", str(manifest_path), "--generate-only"]
+        with mock.patch.object(sys, "argv", args), mock.patch.object(
+            narration, "load_f5_engine", return_value=(engine, object(), object(), "test", "stub")
+        ):
+            self.assertEqual(narration.main(), 0)
+
+        engine.preprocess_ref_audio_text.assert_called_once_with(
+            str(project_root / "references" / "project-default.wav"), "Project voice words."
+        )
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        first_take = audio_root / saved["selected_takes"]["opening-hook"]
+        first_receipt = json.loads(first_take.with_suffix(".json").read_text(encoding="utf-8"))
+        self.assertEqual(first_receipt["voice_style"], "project_default")
+
+        changed_project_manifest = copy.deepcopy(project_manifest)
+        changed_project_manifest["narration"]["default_voice"]["reference_text"] = "Changed project voice words."
+        project_manifest_path.write_text(json.dumps(changed_project_manifest), encoding="utf-8")
+        dry_run = subprocess.run(
+            [sys.executable, str(Path(narration.__file__)), "--manifest", str(manifest_path), "--dry-run"],
+            text=True, capture_output=True,
+        )
+        self.assertIn("opening-hook (voice or speech settings changed)", dry_run.stdout)
+
+        saved["segments"][0]["voice_style"] = "warm"
+        manifest_path.write_text(json.dumps(saved), encoding="utf-8")
+        override_engine = mock.Mock()
+        override_engine.preprocess_ref_audio_text.return_value = ("processed warm reference", "Warm style words.")
+        override_engine.infer_process.return_value = (np.zeros(240, dtype=np.float32), 24000, None)
+        with mock.patch.object(sys, "argv", args), mock.patch.object(
+            narration, "load_f5_engine", return_value=(override_engine, object(), object(), "test", "stub")
+        ):
+            self.assertEqual(narration.main(), 0)
+        override_engine.preprocess_ref_audio_text.assert_called_once_with(
+            str(warm_reference), "Warm style words."
+        )
+
+    def test_invalid_project_default_voice_is_rejected(self):
+        project_root = self.root / "invalid-project"
+        audio_root = project_root / "audio"
+        audio_root.mkdir(parents=True)
+        manifest_path = audio_root / "narration_manifest.json"
+        (project_root / "video_project.json").write_text(
+            json.dumps({"narration": {"default_voice": {"reference_audio": "voice.wav"}}}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "reference_text"):
+            narration.project_default_voice(manifest_path)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ class ProjectTest(unittest.TestCase):
         created = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(created["project_title"], self.root.name)
         self.assertEqual(created["project_idea"], {"summary": "", "creative_direction": ""})
+        self.assertIsNone(created["narration"]["default_voice"])
         self.assertEqual(created["narration_outline"], "")
         self.assertEqual(created["project_status"]["narration_script"], "not_assessed")
         self.assertEqual(created["project_status"]["pending_codex_requests"]["visual"], "not_assessed")
@@ -680,6 +681,18 @@ class HttpTest(unittest.TestCase):
 
         self.assertEqual(payload, {"relative_path": "video_project.json", "manifest": manifest})
         self.assertEqual(manifest_path.read_bytes(), original)
+
+    def test_state_reports_effective_default_voice_source(self):
+        self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")
+        (self.root / "video_project.json").write_text(json.dumps({
+            "narration": {
+                "default_voice": {
+                    "reference_audio": "audio/reference_voice.wav",
+                    "reference_text": "Exact reference words.",
+                }
+            }
+        }), encoding="utf-8")
+        self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
 
     def test_project_manifest_api_reports_missing_or_invalid_root_documents(self):
         with self.assertRaises(HTTPError) as missing:

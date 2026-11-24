@@ -82,6 +82,9 @@ class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayer
                     "visual": "not_assessed",
                 },
             },
+            "narration": {
+                "default_voice": None,
+            },
             "narration_outline": "",
             "inspiration": {
                 "narration_samples": [],
@@ -239,6 +242,10 @@ class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayer
             visual_recipes = self._recipe_catalog()
             recipes_by_id = {item["id"]: item["title"] for item in visual_recipes}
             visual_layer = self.visual_layer_payload(data, sequence_units)
+            try:
+                project_voice = narration.project_default_voice(self.manifest_path)
+            except ValueError as exc:
+                raise WorkbenchError(str(exc), 422) from exc
             visual_take_document = None
             selected_visual_take = visual_layer.get("selected_take") or {}
             if selected_visual_take.get("take_id") and selected_visual_take.get("status") != "invalid":
@@ -323,6 +330,7 @@ class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayer
                 "unlinked_narration_ids": unlinked,
                 "sequence_order_conflict": sequence_order_conflict,
                 "voice_style_names": list(data.get("voice_styles", {}).keys()),
+                "default_voice_source": "video_project.json" if project_voice else "audio/narration_manifest.json",
                 "visual_recipes": visual_recipes,
                 "visual_layer": visual_layer,
                 "music_layer": self.project_music_layer_payload(data, sequence_units),

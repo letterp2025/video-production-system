@@ -45,19 +45,22 @@ If F5-TTS needs a different Python environment, add `--python 'C:\path\to\f5-tts
 
 ## Project folders and what owns each layer
 
-When VPS starts for a project, it creates a starter `video_project.json` at this root if one is missing. It is a user- and Codex-facing brief: capture the general idea, creative direction, rough conversational narration outline, inspirations (sample narration, YouTube videos, artists, and other references), and project-status notes. Status fields start as `not_assessed` rather than making assumptions about existing project work. The workbench does not overwrite an existing file or automatically synchronize these notes; edit the JSON as the project evolves. **Project manifest** in the workbench header opens a read-only view of it.
+When VPS starts for a project, it creates a starter `video_project.json` at this root if one is missing. It is a user- and Codex-facing brief: capture the general idea, creative direction, rough conversational narration outline, inspirations (sample narration, YouTube videos, artists, and other references), project-status notes, and optionally the project's default F5-TTS voice. Status fields start as `not_assessed` rather than making assumptions about existing project work. The workbench does not overwrite an existing file or automatically synchronize these notes; edit the JSON as the project evolves. **Project manifest** in the workbench header opens a read-only view of it.
+
+To set a project-wide F5-TTS reference voice, edit `video_project.json` and fill `narration.default_voice` with a project-relative `reference_audio` path and the exact `reference_text` spoken in that recording. For example, use `audio/reference_audio/channel-voice.wav` as the path. This overrides the fallback `voice` in `audio/narration_manifest.json` for segments with no named `voice_style`; a segment's explicit named style still takes precedence. Leave `default_voice` as `null` to keep using the narration-manifest fallback. The F5-TTS panel identifies which default source is currently active. Changing the effective voice makes old takes stale so they are regenerated before use.
 
 The project root is the folder containing `video_project.json` and `audio/`. The first project already uses the narration folders shown below. Visual takes, project-wide music, and project assets are added as that work begins; they are not prerequisites for drafting or reviewing narration. The workbench creates a starter `video_project.json` when absent, but it does not create every optional layer folder in advance.
 
 ```text
 effectcraft-introduction-01/
-|-- video_project.json                 # creative identity, inspirations, outline, status notes
+|-- video_project.json                 # creative identity, narration default voice, inspirations, outline, status
 |-- sequence_manifest.json             # ordered video units and planned durations
 |-- README.md                          # project status and links (optional)
 |-- SCRIPT.md                          # research/editorial notes (optional)
 |-- PRODUCTION_PLAN.md                 # broader brief or history (optional)
 |-- audio/
 |   |-- narration_manifest.json        # source of truth for stable segments and approved words
+|   |-- reference_audio/                # optional project-level default F5-TTS speaker samples
 |   |-- narration_requests/            # optional AI wording requests and result records
 |   |-- segments/                      # generated per-segment narration takes
 |   |-- assembled/                     # combined narration review WAVs
@@ -93,10 +96,10 @@ This is an illustrative layout, not a list of folders VPS pre-creates. A project
 | Layer | Source of truth | What it contains |
 |---|---|---|
 | Story sequence | `sequence_manifest.json` | Canonical video order: narration-linked and visual-only units, stable IDs, and editable planned durations. |
-| Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable narration IDs, speech-only playback order and approved text, voice settings, selected takes, and AI wording requests/results. |
+| Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable narration IDs, speech-only playback order and approved text, per-segment voice-style/TTS overrides, selected takes, and AI wording requests/results. |
 | Visual and candidate SFX | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and `visual_layer/<take-id>/segments/<unit-id>/requests/<request-id>/` | A take describes one direction across the video sequence. Each unit can keep multiple independent visual requests; implementation/export assets remain project-owned. Optional SFX planning belongs to the visual candidate it supports. |
 | Music | `audio/music/manifest.json` | One project-wide list. Each item's `start_segment_id` and `end_segment_id` values refer to sequence-unit IDs; the cue starts at the beginning of the first unit and ends after the last unit. Optional asset paths refer to project files. |
-| Project identity and direction | `video_project.json` | User- and AI-facing creative brief, rough narration outline, inspirations, and manually maintained project-status context. |
+| Project identity and direction | `video_project.json` | User- and AI-facing creative brief, rough narration outline, inspirations, manually maintained project-status context, and optional project-wide F5-TTS default voice reference/transcript. |
 | Final video | Chosen NLE/production-tool project and `render/HIGH/` output | The NLE or production renderer assembles, mixes, and renders; VPS prepares assets and planning handoff information rather than acting as an NLE. |
 
 ### Story sequence and visual-only intervals

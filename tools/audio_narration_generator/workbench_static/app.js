@@ -655,10 +655,15 @@ function renderSegmentList() {
 
 function renderVoiceStyles(segment) {
   const select = $("voice-style");
+  const usesProjectDefault = state.project.default_voice_source === "video_project.json";
+  const defaultSource = usesProjectDefault
+    ? "video_project.json → narration.default_voice"
+    : "audio/narration_manifest.json → voice";
+  $("voice-default-note").textContent = `Unstyled segments use ${defaultSource}. A named segment voice style overrides this default.`;
   select.replaceChildren();
   const fallback = document.createElement("option");
   fallback.value = "";
-  fallback.textContent = "Project default voice";
+  fallback.textContent = usesProjectDefault ? "Project default voice" : "Narration manifest default";
   select.append(fallback);
   for (const name of state.project.voice_style_names) {
     const option = document.createElement("option");

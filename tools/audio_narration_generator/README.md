@@ -90,7 +90,7 @@ Approved text, narration settings, and selected narration takes live in `audio/n
 
 The selected-sequence workspace has three top-level tabs: **Script and Narration Layer**, **Visual Layer**, and **Music Layer**. **Scratchpad** and **F5-TTS** are nested under Script and Narration. Visual Layer holds visual requests and optional candidate-specific SFX JSON. The previous per-segment SFX mapping and visual-plan panels are no longer shown. Music is project-wide, and each item's start and end anchors display both the stable sequence-unit ID and current unit title. See the [segment layers task order](../../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md).
 
-On workbench startup, VPS creates a starter `video_project.json` at the selected video's root if the file is missing. It never overwrites an existing file. The starter includes the project idea and creative direction, a free-form narration outline, inspiration lists (narration samples, YouTube videos, artists, and other references), and project-status fields. Status values begin as `not_assessed`; they are context for the user and Codex, not automatically synchronized progress indicators. Update the JSON as the project develops.
+On workbench startup, VPS creates a starter `video_project.json` at the selected video's root if the file is missing. It never overwrites an existing file. The starter includes the project idea and creative direction, a free-form narration outline, inspiration lists (narration samples, YouTube videos, artists, and other references), project-status fields, and an unset optional narration default voice. Status values begin as `not_assessed`; they are context for the user and Codex, not automatically synchronized progress indicators. Update the JSON as the project develops.
 
 Use **Project manifest** in the header to open a read-only modal showing all fields from that root file. The manifest is the project's creative brief and context for the user and Codex; it does not replace the detailed layer manifests. Edit the file with your usual editor or terminal Codex session, then reload the modal to see changes.
 
@@ -351,13 +351,26 @@ See the repository's [validation record](../../VALIDATION.md#addendum-transient-
 
 Keep reference recordings beside the project when you want the project to move as a unit. Reference paths can be relative to `narration_manifest.json` or absolute. For example, with `audio/reference_audio/default.wav`, set `voice.reference_audio` to `reference_audio/default.wav`. Absolute paths work on the current machine but usually need editing if the project moves to another computer or folder.
 
-The root `voice` object is the fallback profile. Each named entry in `voice_styles` is another profile, with its own `reference_audio` and the exact `reference_text` spoken in that clip. Put a profile key in a segment's `voice_style` to select it; `null` selects the root `voice`. Keep the cue directions used to record a sample out of `reference_text` unless they were actually spoken. The example's profile names are illustrative; create and name profiles for your own recordings.
+The root `voice` object in `audio/narration_manifest.json` remains the backward-compatible fallback. To choose one default voice for the whole video project, add this object to the root `video_project.json`:
+
+```json
+{
+  "narration": {
+    "default_voice": {
+      "reference_audio": "audio/reference_audio/channel-voice.wav",
+      "reference_text": "The exact words spoken in that reference recording."
+    }
+  }
+}
+```
+
+That project-level profile overrides `audio/narration_manifest.json`'s top-level `voice` for every segment without a named style. Its relative `reference_audio` path is resolved from the video-project root; the older narration-manifest paths are resolved from the `audio/` folder. A segment with a named `voice_style` in `voice_styles` explicitly overrides both defaults. `default_voice: null` leaves the narration-manifest fallback in effect. When you change the effective voice profile, existing takes are detected as stale and must be regenerated before assembly. Keep the cue directions used to record a sample out of `reference_text` unless they were actually spoken. Because narration request JSON includes the full project manifest as AI context, review the reference transcript and other project details before sending a request to an external provider. The example's profile names are illustrative; create and name profiles for your own recordings.
 
 ## Workflow
 
 1. Copy narration_manifest.example.json to the project's audio folder.
 2. Add segment objects in playback order and set their IDs, text, status, voice style, and optional TTS overrides.
-3. Add local reference recordings and exact transcripts to voice or voice_styles.
+3. Add local reference recordings and exact transcripts to `video_project.json`'s `narration.default_voice` for the project default, or to the narration manifest's `voice`/`voice_styles` for legacy fallback and segment-specific styles.
 4. Optionally listen to a draft through Windows SAPI without creating a file:
 
     python tools/audio_narration_generator/preview_narration.py --manifest path/to/audio/narration_manifest.json --segment-id opening-hook
