@@ -126,6 +126,16 @@
               <p>Write what you want changed. Create a request for Codex, Claude, or another AI to read from your project files.</p>
             </div>
             <label class="field-label" for="editorial-note">Your note</label>
+            <div class="prompt-starters" role="group" aria-label="Narration note starting points">
+              <span class="prompt-starters-label">Add a direction</span>
+              <div class="prompt-starter-buttons">
+                <button type="button" data-note-preset="flow">Make it flow well</button>
+                <button type="button" data-note-preset="natural">Sound natural</button>
+                <button type="button" data-note-preset="clearer">Make it clearer</button>
+                <button type="button" data-note-preset="shorter">Make it shorter</button>
+                <button type="button" data-note-preset="opening">Try another opening</button>
+              </div>
+            </div>
             <textarea id="editorial-note" class="note-input" maxlength="6000" placeholder="The first line feels abrupt. Give it a little context before the reveal."></textarea>
             <div class="note-actions">
               <button id="save-note" class="text-button" type="button">Save note</button>
@@ -232,6 +242,16 @@
                 <summary class="button button-visual">Add visual request</summary>
                 <div class="create-take-fields">
                   <label for="visual-request-brief">What should we see in this segment?</label>
+                  <div class="prompt-starters" role="group" aria-label="Visual brief starting points">
+                    <span class="prompt-starters-label">Add a direction</span>
+                    <div class="prompt-starter-buttons">
+                      <button type="button" data-visual-preset="suggest">Suggest a visual</button>
+                      <button type="button" data-visual-preset="text">Text-only treatment</button>
+                      <button type="button" data-visual-preset="process">Show the process</button>
+                      <button type="button" data-visual-preset="different">Try a different style</button>
+                      <button type="button" data-visual-preset="reference">Use this reference</button>
+                    </div>
+                  </div>
                   <textarea id="visual-request-brief" rows="4" maxlength="24000" placeholder="Describe the visual style, elements, and motion. Example: a retro text-only reveal."></textarea>
                   <label for="visual-request-renderer">Renderer preference <small>Optional. Leave on “Codex chooses” to decide per request.</small></label>
                   <select id="visual-request-renderer"><option value="">Codex chooses</option><option value="effectcraft">EffectCraft</option><option value="manim">Manim</option><option value="gsap">GSAP</option></select>

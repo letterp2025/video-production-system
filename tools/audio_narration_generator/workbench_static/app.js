@@ -12,6 +12,32 @@ const knownTts = [
   ["cfg_strength", "CFG strength", "0.1"], ["sway_sampling_coef", "Sway coefficient", "0.1"],
   ["fix_duration", "Fixed duration", "0.1"]
 ];
+const notePresets = {
+  flow: "Make this segment flow naturally from the previous one into the next. Keep my meaning and voice; suggest wording I can say aloud.",
+  natural: "Make this sound like natural speech rather than written prose. Keep the original meaning and my conversational voice.",
+  clearer: "Make the idea easier to understand on first listen. Preserve the facts and avoid adding unsupported claims.",
+  shorter: "Tighten this segment by removing repetition and filler. Keep its essential point and spoken rhythm.",
+  opening: "Suggest a stronger opening line for this segment that fits what comes before and after it. Keep the rest close to my intent."
+};
+const visualPresets = {
+  suggest: "Suggest an original visual treatment for this segment that supports the spoken words. Choose suitable elements, motion, and renderer; do not assume an existing library entry.",
+  text: "Create a text-only visual treatment for this segment. Use typography, composition, and motion to make the key idea clear without stock footage or a required library asset.",
+  process: "Show the concrete process described in this segment. Make the steps legible and time the visual changes to the narration.",
+  different: "Create a distinct new visual candidate for this segment within the selected whole-video take. Explore a different style or motion approach without overwriting earlier requests or results.",
+  reference: "Use the attached Visual Library reference as guidance for this segment. Follow my reference notes, adapt it to this video's direction, and create project-owned work."
+};
+
+function addPromptStarter(field, text) {
+  const separator = field.value.trim() ? "\n\n" : "";
+  if (field.value.length + separator.length + text.length > field.maxLength) {
+    toast("This note is full. Shorten it before adding another direction.");
+    return;
+  }
+  field.value += separator + text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.focus();
+  field.setSelectionRange(field.value.length, field.value.length);
+}
 
 async function request(path, body) {
   const options = body === undefined ? {} : {
@@ -452,7 +478,7 @@ function setBusy(value) {
     if (button) button.disabled = value;
   });
   document.querySelectorAll("#tts-fields input, #segment-list button, #suggestions button, #take-history-list select").forEach((item) => { item.disabled = value; });
-  document.querySelectorAll("#narration-requests button").forEach((item) => { item.disabled = value; });
+  document.querySelectorAll("#narration-requests button, [data-note-preset]").forEach((item) => { item.disabled = value; });
   document.querySelectorAll("#visual-request-create button, #visual-request-create textarea, #visual-request-create select, #visual-request-list button, #visual-request-create input").forEach((item) => { item.disabled = value; });
   updateDirtyState();
 }
@@ -1548,6 +1574,18 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-note-preset]").forEach((button) => button.addEventListener("click", () => {
+    addPromptStarter($("editorial-note"), notePresets[button.dataset.notePreset]);
+  }));
+  document.querySelectorAll("[data-visual-preset]").forEach((button) => button.addEventListener("click", () => {
+    const preset = button.dataset.visualPreset;
+    if (preset === "reference" && !draftReferences.length) {
+      $("visual-library-browser").open = true;
+      toast("Attach a library reference first, then use this starting point.");
+      return;
+    }
+    addPromptStarter($("visual-request-brief"), visualPresets[preset]);
+  }));
   $("visual-take-select").addEventListener("change", selectVisualTake);
   $("open-project-manifest").addEventListener("click", openProjectManifest);
   $("close-project-manifest").addEventListener("click", () => $("project-manifest-dialog").close());

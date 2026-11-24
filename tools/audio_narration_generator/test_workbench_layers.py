@@ -616,6 +616,15 @@ class LayerInterfaceContractTest(unittest.TestCase):
         self.assertIn(".music-item-range { grid-template-columns: 1fr; }", css)
         self.assertIn(".shared-narration-context", css)
         self.assertIn("[hidden] { display: none !important; }", css)
+        for preset in ("flow", "natural", "clearer", "shorter", "opening"):
+            self.assertIn(f'data-note-preset="{preset}"', html)
+            self.assertIn(f"  {preset}:", app)
+        for preset in ("suggest", "text", "process", "different", "reference"):
+            self.assertIn(f'data-visual-preset="{preset}"', html)
+            self.assertIn(f"  {preset}:", app)
+        self.assertIn('field.dispatchEvent(new Event("input", { bubbles: true }))', app)
+        self.assertIn('if (preset === "reference" && !draftReferences.length)', app)
+        self.assertIn(".prompt-starter-buttons { display: flex; flex-wrap: wrap;", css)
         self.assertIn("createTake.disabled = state.busy || isDirty() || !state.project?.segments.length;", app)
         self.assertIn("if (state.busy || isDirty()) return toast(\"Save beat changes before creating a visual take.\");", app)
         self.assertIn("if (isDirty()) return toast(\"Save beat changes before creating the project Music manifest.\");", app)
