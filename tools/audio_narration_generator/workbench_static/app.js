@@ -105,6 +105,76 @@ function renderProjectManifest(container, manifest) {
   for (const [key, value] of entries) appendManifestValue(container, key, value);
 }
 
+function renderProjectVoiceSettings(container, result) {
+  const section = document.createElement("section");
+  section.className = "project-voice-settings";
+  const heading = document.createElement("h3");
+  heading.textContent = "Default narration voice";
+  const description = document.createElement("p");
+  description.textContent = "Used by F5-TTS for segments without a named voice style. A relative audio path starts at the video project folder.";
+  const form = document.createElement("form");
+  form.className = "project-voice-form";
+  const audioLabel = document.createElement("label");
+  audioLabel.textContent = "Reference audio path";
+  const audio = document.createElement("input");
+  audio.type = "text";
+  audio.maxLength = 2000;
+  audio.placeholder = "audio/reference_audio/my-voice.wav";
+  audio.value = result.manifest.narration?.default_voice?.reference_audio || "";
+  audioLabel.append(audio);
+  const textLabel = document.createElement("label");
+  textLabel.textContent = "Exact words spoken in that recording";
+  const transcript = document.createElement("textarea");
+  transcript.maxLength = 10000;
+  transcript.rows = 3;
+  transcript.value = result.manifest.narration?.default_voice?.reference_text || "";
+  textLabel.append(transcript);
+  const actions = document.createElement("div");
+  actions.className = "project-voice-actions";
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "button button-visual";
+  save.textContent = "Save default voice";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "button button-outline";
+  clear.textContent = "Use narration fallback";
+  clear.disabled = !result.manifest.narration?.default_voice;
+  const status = document.createElement("p");
+  status.className = "project-voice-status";
+  status.setAttribute("role", "status");
+  actions.append(save, clear);
+  form.append(audioLabel, textLabel, actions, status);
+  section.append(heading, description, form);
+  container.prepend(section);
+  async function persist(remove) {
+    if (!remove && (!audio.value.trim() || !transcript.value.trim())) {
+      status.textContent = "Add both the recording path and its exact spoken words.";
+      return;
+    }
+    save.disabled = clear.disabled = true;
+    status.textContent = "Saving…";
+    try {
+      const updated = await request("/api/project-manifest/default-voice", {
+        manifest_hash: result.manifest_hash,
+        reference_audio: remove ? null : audio.value.trim(),
+        reference_text: remove ? null : transcript.value.trim()
+      });
+      await refreshState();
+      result = updated;
+      renderProjectManifest(container, updated.manifest);
+      renderProjectVoiceSettings(container, updated);
+      toast(remove ? "Project voice cleared; narration fallback is active." : "Project default voice saved.");
+    } catch (error) {
+      status.textContent = error.message;
+      save.disabled = false;
+      clear.disabled = !result.manifest.narration?.default_voice;
+    }
+  }
+  form.addEventListener("submit", (event) => { event.preventDefault(); persist(false); });
+  clear.addEventListener("click", () => persist(true));
+}
+
 async function openProjectManifest() {
   const dialog = $("project-manifest-dialog");
   const content = $("project-manifest-content");
@@ -116,8 +186,9 @@ async function openProjectManifest() {
   content.textContent = "Loading the project manifest…";
   try {
     const result = await request("/api/project-manifest");
-    location.textContent = `${result.relative_path} · Read only`;
+    location.textContent = `${result.relative_path} · Edit default voice below; other project details are read only`;
     renderProjectManifest(content, result.manifest);
+    renderProjectVoiceSettings(content, result);
   } catch (error) {
     location.textContent = "Project root · Read only";
     content.textContent = error.message;

@@ -317,7 +317,14 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 return
             try:
                 body = self._read_json()
-                if self.path == "/api/visual-takes/create":
+                if self.path == "/api/project-manifest/default-voice":
+                    if "reference_audio" not in body or "reference_text" not in body:
+                        raise WorkbenchError("Provide both reference_audio and reference_text.")
+                    self._json(200, project.save_project_default_voice(
+                        body.get("reference_audio"), body.get("reference_text"),
+                        self._required_string(body, "manifest_hash"),
+                    ))
+                elif self.path == "/api/visual-takes/create":
                     result = project.create_visual_take(
                         self._required_string(body, "take_id"),
                         self._required_string(body, "title"),

@@ -265,6 +265,14 @@ audio { width: 100%; height: 34px; }
 .project-manifest-content { min-height: 0; overflow: auto; padding: 8px clamp(18px, 4vw, 44px) 30px; overscroll-behavior: contain; }
 .project-manifest-content[aria-busy="true"] { display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .project-manifest-content > p { margin: 20px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.project-voice-settings { padding: 18px 0 22px; border-bottom: 2px solid var(--cyan); }
+.project-voice-settings h3 { margin: 0 0 5px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif; font-size: 21px; }
+.project-voice-settings > p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.project-voice-form { display: grid; gap: 11px; }
+.project-voice-form label { display: grid; gap: 5px; font-size: 11px; font-weight: 750; }
+.project-voice-form input, .project-voice-form textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid var(--line); background: var(--sheet); color: var(--ink); font: 13px/1.45 Arial, sans-serif; }
+.project-voice-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.project-voice-status { min-height: 1em; margin: 0; color: var(--muted); font-size: 12px; }
 .project-manifest-group { padding: 17px 0; border-bottom: 1px solid var(--line); }
 .project-manifest-group--nested { margin-left: 12px; padding: 10px 0 8px 14px; border-bottom: 0; border-left: 2px solid var(--line); }
 .project-manifest-group h2, .project-manifest-group h3 { margin: 0 0 10px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif; letter-spacing: -.025em; }

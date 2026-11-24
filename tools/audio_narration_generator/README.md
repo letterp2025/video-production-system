@@ -351,7 +351,7 @@ See the repository's [validation record](../../VALIDATION.md#addendum-transient-
 
 Keep reference recordings beside the project when you want the project to move as a unit. Reference paths can be relative to `narration_manifest.json` or absolute. For example, with `audio/reference_audio/default.wav`, set `voice.reference_audio` to `reference_audio/default.wav`. Absolute paths work on the current machine but usually need editing if the project moves to another computer or folder.
 
-The root `voice` object in `audio/narration_manifest.json` remains the backward-compatible fallback. To choose one default voice for the whole video project, add this object to the root `video_project.json`:
+The root `voice` object in `audio/narration_manifest.json` remains the backward-compatible fallback. In the workbench, open **Project manifest** and fill **Default narration voice**, then save. The recording path is relative to the project root; use **Use narration fallback** to clear the project default. You can make the same change directly by adding this object to the root `video_project.json`:
 
 ```json
 {

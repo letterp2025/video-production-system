@@ -679,8 +679,38 @@ class HttpTest(unittest.TestCase):
         with urlopen(self.base + "/api/project-manifest") as response:
             payload = json.loads(response.read())
 
-        self.assertEqual(payload, {"relative_path": "video_project.json", "manifest": manifest})
+        self.assertEqual(payload, {"relative_path": "video_project.json", "manifest": manifest,
+                                   "manifest_hash": workbench_common.sha256_bytes(original)})
         self.assertEqual(manifest_path.read_bytes(), original)
+
+    def test_project_default_voice_api_preserves_other_fields_and_rejects_stale_edit(self):
+        project_path = self.root / "video_project.json"
+        original = {"project_idea": {"summary": "Keep this"}, "narration": {"delivery_note": "Warm"}}
+        project_path.write_text(json.dumps(original), encoding="utf-8")
+        with urlopen(self.base + "/api/project-manifest") as response:
+            before = json.loads(response.read())
+
+        def save(body):
+            req = Request(self.base + "/api/project-manifest/default-voice",
+                          data=json.dumps(body).encode("utf-8"),
+                          headers={"Content-Type": "application/json"}, method="POST")
+            return urlopen(req)
+
+        voice = {"reference_audio": "audio/reference_audio/voice.wav", "reference_text": "Exact words."}
+        with save({"manifest_hash": before["manifest_hash"], **voice}) as response:
+            updated = json.loads(response.read())
+        self.assertEqual(updated["manifest"]["narration"]["default_voice"], voice)
+        self.assertEqual(updated["manifest"]["narration"]["delivery_note"], "Warm")
+        self.assertEqual(updated["manifest"]["project_idea"], original["project_idea"])
+        self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
+        with self.assertRaises(HTTPError) as stale:
+            save({"manifest_hash": before["manifest_hash"], **voice})
+        self.assertEqual(stale.exception.code, 409)
+        with save({"manifest_hash": updated["manifest_hash"], "reference_audio": None,
+                   "reference_text": None}) as response:
+            cleared = json.loads(response.read())
+        self.assertIsNone(cleared["manifest"]["narration"]["default_voice"])
+        self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")
 
     def test_state_reports_effective_default_voice_source(self):
         self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")

@@ -147,7 +147,39 @@ class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayer
             raise WorkbenchError("The root video_project.json is not valid JSON.", 422) from exc
         if not isinstance(manifest, dict):
             raise WorkbenchError("The root video_project.json must contain a JSON object.", 422)
-        return {"relative_path": "video_project.json", "manifest": manifest}
+        return {"relative_path": "video_project.json", "manifest": manifest, "manifest_hash": sha256_bytes(raw)}
+
+    def save_project_default_voice(self, reference_audio: str | None, reference_text: str | None,
+                                   expected_hash: str) -> dict[str, Any]:
+        """Change only the project voice setting, preserving the rest of the brief."""
+        if (reference_audio is None) != (reference_text is None):
+            raise WorkbenchError("Provide both the reference path and exact words, or clear both.")
+        if reference_audio is not None and (not isinstance(reference_audio, str) or not reference_audio.strip()
+                                            or len(reference_audio) > 2_000):
+            raise WorkbenchError("Reference audio must be a non-empty path of at most 2,000 characters.")
+        if reference_audio is not None and (not isinstance(reference_text, str) or not reference_text.strip()
+                                            or len(reference_text) > 10_000):
+            raise WorkbenchError("Reference text must contain the exact spoken words (at most 10,000 characters).")
+        with self.lock:
+            payload = self.project_manifest_payload()
+            self._check_manifest_hash(expected_hash, payload["manifest_hash"])
+            manifest = payload["manifest"]
+            narration_settings = manifest.get("narration")
+            if narration_settings is None:
+                narration_settings = {}
+                manifest["narration"] = narration_settings
+            if not isinstance(narration_settings, dict):
+                raise WorkbenchError("Project manifest narration must be a JSON object.", 422)
+            narration_settings["default_voice"] = (
+                {"reference_audio": reference_audio.strip(), "reference_text": reference_text.strip()}
+                if reference_audio is not None else None
+            )
+            path = self.audio_root.parent / "video_project.json"
+            try:
+                atomic_write_json(path, manifest)
+            except OSError as exc:
+                raise WorkbenchError(f"Could not save the project voice: {exc}", 500) from exc
+            return self.project_manifest_payload()
 
     def read_state(self) -> dict[str, Any]:
         if not self.work_path.exists():
