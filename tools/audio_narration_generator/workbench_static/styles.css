@@ -330,7 +330,7 @@ audio { width: 100%; height: 34px; }
   .review-panel { padding: 22px 16px; }
 }
 @media (max-width: 900px) {
-  .script-layer-panel { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .script-layer-panel { display: block; overflow-y: auto; }
   .editor-panel, .review-panel { overflow: visible; }
   .review-panel { border-top: 1px solid var(--line); border-left: 0; }
   .layer-tab { font-size: 10px; }

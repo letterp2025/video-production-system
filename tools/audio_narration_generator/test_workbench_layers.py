@@ -612,6 +612,7 @@ class LayerInterfaceContractTest(unittest.TestCase):
         self.assertNotIn('id="tab-soundeffects-layer"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn("@media (max-width: 720px)", css)
+        self.assertIn("@media (max-width: 900px) {\n  .script-layer-panel { display: block; overflow-y: auto; }", css)
         self.assertIn("@media (max-width: 420px)", css)
         self.assertIn(".music-item-range { grid-template-columns: 1fr; }", css)
         self.assertIn(".shared-narration-context", css)
