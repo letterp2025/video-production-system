@@ -207,8 +207,11 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                 self._json(403, {"error": "This workbench accepts requests only from its local browser."})
                 return
             try:
-                if self.path in {"/", "/index.html", "/app.js", "/styles.css"}:
-                    filename = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/styles.css": "styles.css"}[self.path]
+                if self.path in {"/", "/index.html", "/app.js", "/f5_tts_component.js", "/styles.css"}:
+                    filename = {
+                        "/": "index.html", "/index.html": "index.html", "/app.js": "app.js",
+                        "/f5_tts_component.js": "f5_tts_component.js", "/styles.css": "styles.css",
+                    }[self.path]
                     path = STATIC_DIR / filename
                     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
                     if filename.endswith(".js"):

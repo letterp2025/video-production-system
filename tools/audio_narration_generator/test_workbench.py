@@ -729,8 +729,10 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(copied["manifest"]["narration"]["default_voice"], {
             "reference_audio": "audio/reference_audio/warm.wav", "reference_text": "Warm exact words."
         })
-        self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
-        self.assertNotIn("Warm exact words.", json.dumps(self.project.state_payload()))
+        state = self.project.state_payload()
+        self.assertEqual(state["default_voice_source"], "video_project.json")
+        self.assertNotIn("Warm exact words.", json.dumps(state))
+        self.assertNotIn("audio/reference_audio/warm.wav", json.dumps(state))
 
     def test_state_reports_effective_default_voice_source(self):
         self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")
@@ -742,7 +744,14 @@ class HttpTest(unittest.TestCase):
                 }
             }
         }), encoding="utf-8")
-        self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
+        state = self.project.state_payload()
+        self.assertEqual(state["default_voice_source"], "video_project.json")
+
+    def test_f5_component_script_is_served_as_a_local_static_asset(self):
+        with urlopen(self.base + "/f5_tts_component.js") as response:
+            source = response.read().decode("utf-8")
+            self.assertIn("javascript", response.headers.get("Content-Type", ""))
+        self.assertIn("F5TTSComponent", source)
 
     def test_narration_request_omits_project_default_voice(self):
         project_manifest_path = self.root / "video_project.json"

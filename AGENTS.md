@@ -15,6 +15,12 @@ These instructions apply to this public repository.
 - When asked to plan a task order first, document the requested future behavior without implementing it in the same pass unless the user separately asks for implementation.
 - Keep tool-specific task histories in their owning tool's documentation folder; link to a repository-wide task order when the scopes are related.
 
+## UI component files
+
+- Give every distinct browser UI component its own JavaScript file. Do not keep adding component rendering and interaction logic to a single application file.
+- Keep `app.js` focused on application-wide state, navigation, and coordination; put component-specific rendering and event behavior in a dedicated component file alongside the workbench assets.
+- Load component files before `app.js`, and test their rendering and interactions independently where practical.
+
 ## Git commits
 
 - Commit completed task changes before handing work back to the user. Include the related source, tests, and documentation in the same logical commit.

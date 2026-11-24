@@ -7,6 +7,7 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 function loadWorkbench(elements = {}, documentMethods = {}) {
+  const componentSource = fs.readFileSync(path.join(__dirname, "workbench_static", "f5_tts_component.js"), "utf8");
   const source = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
   const withoutStartup = source.replace(/\nstart\(\);\s*$/, "");
   assert.notEqual(withoutStartup, source, "The workbench startup call moved; update this harness.");
@@ -16,9 +17,10 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
     HTMLMediaElement: { HAVE_METADATA: 1, NETWORK_LOADING: 2 },
     console,
   });
+  vm.runInContext(componentSource, context, { filename: "f5_tts_component.js" });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
   return {
-    ...vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderSequenceControls, addVisualUnit, saveSequenceUnit, moveSequenceUnit, renderTakes, renderProjectManifest })", context),
+    ...vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderSequenceControls, addVisualUnit, saveSequenceUnit, moveSequenceUnit, renderTakes, renderProjectManifest, renderVoiceStyles, F5TTSComponent })", context),
     evaluate: (source) => vm.runInContext(source, context),
   };
 }
@@ -26,9 +28,14 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
 test("every direct DOM reference exists in the workbench markup", () => {
   const html = fs.readFileSync(path.join(__dirname, "workbench_static", "index.html"), "utf8");
   const script = fs.readFileSync(path.join(__dirname, "workbench_static", "app.js"), "utf8");
+  const component = fs.readFileSync(path.join(__dirname, "workbench_static", "f5_tts_component.js"), "utf8");
   const ids = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
-  const refs = new Set(Array.from(script.matchAll(/\$\("([^"]+)"\)/g), (match) => match[1]));
+  const refs = new Set([
+    ...Array.from(script.matchAll(/\$\("([^"]+)"\)/g), (match) => match[1]),
+    ...Array.from(component.matchAll(/byId\("([^"]+)"\)/g), (match) => match[1]),
+  ]);
   assert.deepEqual([...refs].filter((id) => !ids.has(id)).sort(), []);
+  assert.ok(html.indexOf('src="/f5_tts_component.js"') < html.indexOf('src="/app.js"'));
 });
 
 test("Visual Layer uses whole-video takes and segment requests, not the retired recipe panel", () => {
@@ -77,6 +84,108 @@ test("project manifest viewer renders nested values as text and marks empty sect
   assert.match(text, /No entries yet/);
 });
 
+test("F5-TTS voice selector distinguishes the inherited default from segment overrides", () => {
+  function node(tagName) {
+    return {
+      tagName, children: [], textContent: "", className: "", value: "", disabled: false, label: "",
+      append(...children) { this.children.push(...children); },
+      replaceChildren() { this.children = []; this.textContent = ""; },
+    };
+  }
+  const select = node("select");
+  const note = node("small");
+  const copyButton = node("button");
+  const { state, F5TTSComponent } = loadWorkbench({
+    "voice-style": select,
+    "voice-default-note": note,
+    "copy-voice-default": copyButton,
+  }, { createElement: node });
+  state.project = {
+    default_voice_source: "video_project.json",
+    default_voice_label: "warm_encouragement_option2",
+    voice_style_names: ["warm_encouragement", "curious_investigation"],
+  };
+
+  F5TTSComponent.renderVoiceStyles({ voice_style: null }, state.project, false);
+  assert.equal(select.children[0].textContent, "Use project default: warm encouragement option2");
+  assert.equal(select.children[1].label, "Override the default for this segment");
+  assert.deepEqual(Array.from(select.children[1].children, (option) => option.value), [
+    "warm_encouragement", "curious_investigation",
+  ]);
+  assert.match(note.textContent, /uses the project default voice “warm encouragement option2”/);
+  assert.match(note.textContent, /override it for this segment only/);
+  assert.equal(copyButton.disabled, true);
+
+  F5TTSComponent.renderVoiceStyles({ voice_style: "curious_investigation" }, state.project, false);
+  assert.equal(select.value, "curious_investigation");
+  assert.match(note.textContent, /overrides the project default voice “warm encouragement option2”/);
+  assert.equal(copyButton.disabled, false);
+
+  const segment = { voice_style: null };
+  select.value = "warm_encouragement";
+  F5TTSComponent.updateVoiceStyleSelection(segment, state.project, false);
+  assert.match(note.textContent, /Unsaved: “warm encouragement” will override the default/);
+  assert.equal(copyButton.disabled, false);
+
+  segment.voice_style = "warm_encouragement";
+  F5TTSComponent.updateVoiceStyleSelection(segment, state.project, false);
+  assert.match(note.textContent, /overrides the project default voice “warm encouragement option2” with “warm encouragement”/);
+
+  select.value = "";
+  F5TTSComponent.updateVoiceStyleSelection(segment, state.project, false);
+  assert.match(note.textContent, /will use the project default voice .* after you save/);
+  assert.equal(copyButton.disabled, true);
+
+  state.project = { default_voice_source: "video_project.json", voice_style_names: [] };
+  F5TTSComponent.renderVoiceStyles({ voice_style: null }, state.project, false);
+  assert.equal(select.children[0].textContent, "Use project default voice (label not set)");
+  assert.match(note.textContent, /project default voice \(label not set\)/);
+});
+
+test("F5-TTS component wires voice, speech, take-toggle, and project-default actions", () => {
+  function node() {
+    return {
+      children: [], listeners: {}, attributes: {},
+      addEventListener(name, callback) { this.listeners[name] = callback; },
+      append(...children) { this.children.push(...children); },
+      replaceChildren() { this.children = []; },
+      setAttribute(name, value) { this.attributes[name] = value; },
+    };
+  }
+  const elements = Object.fromEntries([
+    "voice-style", "voice-default-note", "copy-voice-default", "show-other-takes",
+    "take-history-list", "take-history-summary", "tts-fields",
+  ].map((id) => [id, node()]));
+  const { F5TTSComponent } = loadWorkbench(elements, { createElement: node });
+  const segment = { id: "beat-a", voice_style: null, takes: [] };
+  const state = {
+    busy: false, selectedId: segment.id, showOtherTakesFor: null,
+    project: { default_voice_source: "audio/narration_manifest.json", voice_style_names: ["warm"] },
+  };
+  let copied = 0;
+  let dirty = 0;
+  let speechInput = 0;
+  F5TTSComponent.bindEvents({
+    getSegment: () => segment,
+    getState: () => state,
+    onCopyVoiceDefault: () => { copied += 1; },
+    onRateTake() {}, onToast() {},
+    onDirtyChange: () => { dirty += 1; },
+    onSpeechInput: () => { speechInput += 1; },
+  });
+
+  elements["voice-style"].value = "warm";
+  elements["voice-style"].listeners.change();
+  assert.match(elements["voice-default-note"].textContent, /Unsaved: “warm” will override/);
+  assert.equal(dirty, 1);
+  elements["copy-voice-default"].listeners.click();
+  elements["tts-fields"].listeners.input();
+  elements["show-other-takes"].listeners.click();
+  assert.equal(copied, 1);
+  assert.equal(speechInput, 1);
+  assert.equal(state.showOtherTakesFor, segment.id);
+});
+
 test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {
   function node() {
     return {
@@ -89,11 +198,11 @@ test("F5-TTS history shows reviewed, selected, and pruned mock takes", () => {
   }
   const summary = node();
   const list = node();
-  const { renderTakes } = loadWorkbench({ "take-history-summary": summary, "take-history-list": list }, { createElement: node });
-  renderTakes({ takes: [
+  const { state, F5TTSComponent } = loadWorkbench({ "take-history-summary": summary, "take-history-list": list, "show-other-takes": node() }, { createElement: node });
+  F5TTSComponent.renderTakes({ id: "beat-a", takes: [
     { key: "take-001", selected: true, rating: "favorite", note: "Good pacing", audio_url: "/api/audio/take/beat/take-001" },
     { key: "take-002", selected: false, rating: "rejected", note: "Too slow", pruned: true, audio_url: null },
-  ] });
+  ] }, state, { onRateTake() {}, onToast() {} });
   assert.match(summary.textContent, /2 recorded takes/);
   assert.equal(list.children.length, 2);
   assert.equal(list.children[0].children[0].children[1].textContent, "Selected for assembly");

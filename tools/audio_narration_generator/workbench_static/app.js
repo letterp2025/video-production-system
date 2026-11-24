@@ -6,12 +6,6 @@ let libraryEntries = [];
 let librarySelected = null;
 let draftReferences = [];
 let visualContextKey = "";
-const knownTts = [
-  ["speed", "Speed", "0.05"], ["nfe_step", "NFE steps", "1"],
-  ["target_rms", "Target RMS", "0.01"], ["cross_fade_duration", "Cross-fade seconds", "0.01"],
-  ["cfg_strength", "CFG strength", "0.1"], ["sway_sampling_coef", "Sway coefficient", "0.1"],
-  ["fix_duration", "Fixed duration", "0.1"]
-];
 const notePresets = {
   flow: "Make this segment flow naturally from the previous one into the next. Keep my meaning and voice; suggest wording I can say aloud.",
   natural: "Make this sound like natural speech rather than written prose. Keep the original meaning and my conversational voice.",
@@ -454,7 +448,7 @@ function snapshot() {
     text: $("segment-text").value,
     status: $("segment-status").value,
     voice_style: $("voice-style").value || null,
-    tts: Object.fromEntries(knownTts.flatMap(([key]) => {
+    tts: Object.fromEntries(F5TTSComponent.knownTts.flatMap(([key]) => {
       const value = $("tts-" + key).value.trim();
       if (!value) return [];
       const parsed = Number(value);
@@ -476,6 +470,7 @@ function isNoteDirty() { return state.noteBaseline !== null && $("editorial-note
 
 function setBusy(value) {
   state.busy = value;
+  F5TTSComponent.setBusy(value);
   ["save-segment", "create-narration-request", "refresh-narration-requests", "generate-take", "assemble-audio", "play-active-narration", "play-sapi-sequence", "save-note", "clear-resolved", "reload-project", "segment-title", "segment-status", "segment-text", "voice-style", "editorial-note", "show-inactive", "show-deleted", "move-beat-up", "move-beat-down", "insert-beat-title", "insert-beat-text", "insert-beat-status", "cancel-insert-beat", "save-insert-beat", "visual-take-select", "visual-take-id", "visual-take-title-input", "visual-take-direction-input", "create-visual-take", "open-visual-take", "create-music-manifest", "open-music-manifest"].forEach((id) => {
     const button = $(id);
     if (button) button.disabled = value;
@@ -653,28 +648,6 @@ function renderSegmentList() {
   renderSequenceControls();
 }
 
-function renderVoiceStyles(segment) {
-  const select = $("voice-style");
-  const usesProjectDefault = state.project.default_voice_source === "video_project.json";
-  const defaultSource = usesProjectDefault
-    ? "video_project.json → narration.default_voice"
-    : "audio/narration_manifest.json → voice";
-  $("voice-default-note").textContent = `Unstyled segments use ${defaultSource}. A named segment voice style overrides this default.`;
-  select.replaceChildren();
-  const fallback = document.createElement("option");
-  fallback.value = "";
-  fallback.textContent = usesProjectDefault ? "Project default voice" : "Narration manifest default";
-  select.append(fallback);
-  for (const name of state.project.voice_style_names) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name.replaceAll("_", " ");
-    select.append(option);
-  }
-  select.value = segment.voice_style || "";
-  $("copy-voice-default").disabled = state.busy || !select.value;
-}
-
 async function copyVoiceStyleToProjectDefault() {
   const style = $("voice-style").value;
   if (!style) return toast("Choose a named voice style first.");
@@ -694,129 +667,16 @@ async function copyVoiceStyleToProjectDefault() {
   }
 }
 
+function renderVoiceStyles(segment) {
+  F5TTSComponent.renderVoiceStyles(segment, state.project, state.busy);
+}
+
 function renderTts(segment) {
-  const container = $("tts-fields");
-  container.replaceChildren();
-  for (const [key, label, step] of knownTts) {
-    const wrap = document.createElement("label");
-    wrap.className = "tts-field";
-    const title = document.createElement("span");
-    title.textContent = label;
-    const input = document.createElement("input");
-    input.type = "number";
-    input.id = "tts-" + key;
-    input.step = step;
-    input.inputMode = "decimal";
-    input.value = Object.hasOwn(segment.tts || {}, key) ? String(segment.tts[key]) : "";
-    input.placeholder = state.project.tts_defaults[key] === undefined ? "not set" : `${state.project.tts_defaults[key]} · project default`;
-    const hint = document.createElement("small");
-    hint.textContent = Object.hasOwn(segment.tts || {}, key) ? "Segment override" : "Blank inherits project default";
-    input.addEventListener("input", updateDirtyState);
-    wrap.append(title, input, hint);
-    container.append(wrap);
-  }
+  F5TTSComponent.renderSpeechSettings(segment, state.project, updateDirtyState);
 }
 
 function renderTakes(segment) {
-  const host = $("take-history-list");
-  host.replaceChildren();
-  const takes = segment.takes || [];
-  const featured = takes.find((take) => take.selected) || takes.at(-1);
-  const otherCount = Math.max(0, takes.length - 1);
-  const showOthers = state.showOtherTakesFor === segment.id;
-  const toggle = $("show-other-takes");
-  if (toggle) {
-    toggle.hidden = otherCount === 0;
-    toggle.textContent = showOthers ? "Hide other takes" : `Show ${otherCount} other take${otherCount === 1 ? "" : "s"}`;
-    toggle.setAttribute("aria-expanded", String(showOthers));
-  }
-  $("take-history-summary").textContent = takes.length
-    ? `${takes.length} recorded take${takes.length === 1 ? "" : "s"}. ${featured?.selected ? "Selected take highlighted." : "Latest take shown."}`
-    : "No F5-TTS takes recorded for this beat yet.";
-  for (const take of takes) {
-    const card = document.createElement("article");
-    card.className = `take-card${take.selected ? " selected" : ""}`;
-    card.hidden = !showOthers && take !== featured;
-    const heading = document.createElement("div");
-    heading.className = "take-card-heading";
-    const label = document.createElement("strong");
-    label.textContent = take.key;
-    heading.append(label);
-    if (take.selected) {
-      const badge = document.createElement("span");
-      badge.className = "take-selected-badge";
-      badge.textContent = "Selected for assembly";
-      heading.append(badge);
-    }
-    card.append(heading);
-    const ratingLabel = document.createElement("label");
-    ratingLabel.className = "take-rating-field";
-    const ratingTitle = document.createElement("span");
-    ratingTitle.textContent = "Rating";
-    const rating = document.createElement("select");
-    rating.setAttribute("aria-label", `Rating for ${take.key}`);
-    if (!take.rating) {
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Choose a rating";
-      placeholder.disabled = true;
-      placeholder.selected = true;
-      rating.append(placeholder);
-    }
-    for (const [value, label] of [["favorite", "Favorite"], ["acceptable", "Acceptable"], ["rejected", "Rejected"]]) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      rating.append(option);
-    }
-    rating.value = take.rating || "";
-    rating.disabled = state.busy;
-    rating.addEventListener("change", () => rateTake(segment.id, take.key, rating.value, rating));
-    ratingLabel.append(ratingTitle, rating);
-    card.append(ratingLabel);
-    if (take.note) {
-      const note = document.createElement("p");
-      note.className = "take-note";
-      note.textContent = take.note;
-      card.append(note);
-    }
-    if (take.audio_url) {
-      const audio = document.createElement("audio");
-      audio.controls = true;
-      audio.preload = "none";
-      audio.src = take.audio_url;
-      audio.setAttribute("aria-label", `Play ${take.key}`);
-      card.append(audio);
-    } else {
-      const unavailable = document.createElement("p");
-      unavailable.className = "take-unavailable";
-      unavailable.textContent = take.pruned ? "Audio pruned; review kept in manifest." : "Audio file unavailable.";
-      card.append(unavailable);
-    }
-    if (take.folder_path) {
-      const folder = document.createElement("div");
-      folder.className = "take-folder";
-      const label = document.createElement("span");
-      label.textContent = "Parent folder";
-      const path = document.createElement("code");
-      path.textContent = take.folder_path;
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.textContent = "Copy path";
-      copy.setAttribute("aria-label", `Copy folder path for ${take.key}`);
-      copy.addEventListener("click", async () => {
-        try {
-          await window.navigator.clipboard.writeText(take.folder_path);
-          toast("Folder path copied.");
-        } catch {
-          toast("Select and copy the folder path shown above.");
-        }
-      });
-      folder.append(label, path, copy);
-      card.append(folder);
-    }
-    host.append(card);
-  }
+  F5TTSComponent.renderTakes(segment, state, { onRateTake: rateTake, onToast: toast });
 }
 
 async function rateTake(segmentId, takeKey, rating, control) {
@@ -1674,6 +1534,19 @@ async function clearResolved() {
 }
 
 function bindEvents() {
+  F5TTSComponent.bindEvents({
+    getSegment: currentSegment,
+    getState: () => state,
+    onCopyVoiceDefault: copyVoiceStyleToProjectDefault,
+    onRateTake: rateTake,
+    onToast: toast,
+    onDirtyChange: updateDirtyState,
+    onSpeechInput: () => {
+      if (state.playbackActive) $("assembly-audio").pause();
+      if (state.sapiSequenceActive) $("sapi-audio").pause();
+      updateDirtyState();
+    },
+  });
   $("add-visual-unit").addEventListener("click", () => {
     if (state.busy || isDirty() || isNoteDirty()) return toast("Save changes before adding a visual unit.");
     $("add-visual-form").reset();
@@ -1700,8 +1573,6 @@ function bindEvents() {
   }));
   $("visual-take-select").addEventListener("change", selectVisualTake);
   $("open-project-manifest").addEventListener("click", openProjectManifest);
-  $("copy-voice-default").addEventListener("click", copyVoiceStyleToProjectDefault);
-  $("voice-style").addEventListener("change", () => { $("copy-voice-default").disabled = state.busy || !$("voice-style").value; });
   $("close-project-manifest").addEventListener("click", () => $("project-manifest-dialog").close());
   $("create-visual-take").addEventListener("click", createVisualTake);
   $("open-visual-take").addEventListener("click", openVisualTake);
@@ -1718,11 +1589,6 @@ function bindEvents() {
   });
   $("create-music-manifest").addEventListener("click", createMusicManifest);
   $("open-music-manifest").addEventListener("click", openMusicManifest);
-  $("show-other-takes").addEventListener("click", () => {
-    state.showOtherTakesFor = state.showOtherTakesFor === state.selectedId ? null : state.selectedId;
-    const segment = currentSegment();
-    if (segment) renderTakes(segment);
-  });
   $("insert-beat-form").addEventListener("submit", insertBeat);
   $("cancel-insert-beat").addEventListener("click", () => $("insert-beat-dialog").close());
   for (const [id, key] of [["show-inactive", "showInactive"], ["show-deleted", "showDeleted"]]) {
@@ -1754,17 +1620,12 @@ function bindEvents() {
   };
   bindTabList('.layer-tabs [role="tab"]', activateLayerTab);
   bindTabList('.utility-tabs [role="tab"]', activateUtilityTab);
-  ["segment-title", "segment-status", "voice-style", "segment-text"].forEach((id) => $(id).addEventListener("input", () => {
+  ["segment-title", "segment-status", "segment-text"].forEach((id) => $(id).addEventListener("input", () => {
     if (state.playbackActive) $("assembly-audio").pause();
     if (state.sapiSequenceActive) $("sapi-audio").pause();
     if (id === "segment-text") $("word-count").textContent = `${countWords($(id).value)} words`;
     updateDirtyState();
   }));
-  $("tts-fields").addEventListener("input", () => {
-    if (state.playbackActive) $("assembly-audio").pause();
-    if (state.sapiSequenceActive) $("sapi-audio").pause();
-    updateDirtyState();
-  });
   $("editorial-note").addEventListener("input", () => {
     if (state.playbackActive) $("assembly-audio").pause();
     if (state.sapiSequenceActive) $("sapi-audio").pause();
