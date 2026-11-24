@@ -130,6 +130,19 @@ class LayerProjectTest(unittest.TestCase):
             self.project.edit_sequence("update", {"sequence_hash": state["sequence_hash"], "unit_id": "new-card",
                 "updates": {"duration_seconds": 4}})
 
+    def test_insert_narration_avoids_visual_only_sequence_id(self):
+        initial = self.project.state_payload()
+        self.project.edit_sequence("add", {"sequence_hash": initial["sequence_hash"], "unit_id": "retro-card",
+            "after_id": "opening-hook", "title": "Retro card", "duration_seconds": 3})
+        before = self.project.state_payload()
+        inserted = self.project.insert_segment("opening-hook", "Retro card", "A new spoken beat.", "active", before["manifest_hash"])
+        self.assertEqual(inserted["segment_id"], "retro-card-2")
+        self.assertEqual([unit["id"] for unit in inserted["state"]["sequence_units"]],
+                         ["opening-hook", "retro-card-2", "retro-card", "next-beat", "inactive-beat"])
+        self.assertEqual(len({unit["id"] for unit in inserted["state"]["sequence_units"]}), 5)
+        self.assertEqual([item["id"] for item in self.project.read_manifest()[0]["segments"]][:2],
+                         ["opening-hook", "retro-card-2"])
+
     def test_repeatable_requests_candidate_selection_and_sfx_stay_in_take(self):
         self.create_take("v_layer_1")
         self.project.catalog = mock.Mock()

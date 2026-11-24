@@ -384,7 +384,9 @@ class Project(SequenceMixin, NarrationRequestsMixin, VisualPlanMixin, AudioLayer
                     raise WorkbenchError("Link the selected narration beat before adding another after it.", 409)
                 normalized = unicodedata.normalize("NFKD", title.strip()).encode("ascii", "ignore").decode("ascii").lower()
                 base = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")[:32].rstrip("-") or "new-beat"
-                existing = {segment["id"] for segment in data["segments"]}
+                # Visual-only units share the same stable-ID namespace as narration.
+                existing = {unit["id"] for unit in sequence["units"]}
+                existing.update(segment["id"] for segment in data["segments"])
                 segment_id = base
                 number = 2
                 while segment_id in existing:

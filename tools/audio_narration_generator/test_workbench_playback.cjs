@@ -17,7 +17,10 @@ function loadWorkbench(elements = {}, documentMethods = {}) {
     console,
   });
   vm.runInContext(withoutStartup, context, { filename: "app.js" });
-  return vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderTakes, renderProjectManifest })", context);
+  return {
+    ...vm.runInContext("({ state, playActiveNarration, playSapiSequence, syncPlaybackBeat, syncSapiBeat, setAssemblyAudioSource, visibleSegments, reorderTarget, renderSegmentList, renderSequenceControls, addVisualUnit, saveSequenceUnit, moveSequenceUnit, renderTakes, renderProjectManifest })", context),
+    evaluate: (source) => vm.runInContext(source, context),
+  };
 }
 
 test("every direct DOM reference exists in the workbench markup", () => {
@@ -166,6 +169,115 @@ test("beat list hides inactive and deleted mock beats until each filter is enabl
   renderSegmentList();
   assert.deepEqual(shown(), ["First", "Draft", "Retired"]);
   assert.equal(count.textContent, "3");
+});
+
+test("visual-only units appear in sequence order without offering a narration insert button", () => {
+  function node() {
+    return {
+      children: [],
+      replaceChildren() { this.children = []; },
+      append(...children) { this.children.push(...children); },
+      setAttribute() {},
+      addEventListener() {},
+    };
+  }
+  const elements = {
+    "segment-list": node(), "segment-count": node(),
+    "sequence-unit-controls": node(), "sequence-duration": node(),
+    "sequence-title": node(), "sequence-note": node(),
+    "sequence-title-label": node(), "sequence-note-label": node(),
+    "sequence-move-up": node(), "sequence-move-down": node(),
+    "sequence-warning": node(), "reconcile-sequence": node(),
+  };
+  const { state, renderSegmentList } = loadWorkbench(elements, { createElement: node });
+  state.project = { segments: [
+    { id: "opening", position: 1, kind: "visual_only", title: "Opening card", status: "active", planned_duration_seconds: 3 },
+    { id: "spoken", position: 2, kind: "narration", title: "Spoken beat", status: "active", planned_duration_seconds: 5 },
+  ], unlinked_narration_ids: [], sequence_order_conflict: false };
+  state.selectedId = "opening";
+  renderSegmentList();
+  const [visual, spoken] = elements["segment-list"].children;
+  assert.match(visual.children[0].children[1].children[1].textContent, /opening.*Visual only.*3s/);
+  assert.equal(visual.children[1].hidden, true);
+  assert.equal(visual.children[1].disabled, true);
+  assert.equal(spoken.children[1].hidden, false);
+  assert.equal(elements["sequence-duration"].value, 3);
+  assert.equal(elements["sequence-title"].value, "Opening card");
+  assert.equal(elements["sequence-move-up"].disabled, true);
+  assert.equal(elements["sequence-move-down"].disabled, false);
+});
+
+test("sequence controls show unlinked narration and dispatch save and move edits", () => {
+  function node() {
+    return {
+      children: [],
+      append(...children) { this.children.push(...children); },
+      addEventListener(type, callback) { this.click = callback; },
+    };
+  }
+  const elements = Object.fromEntries([
+    "sequence-unit-controls", "sequence-duration", "sequence-title", "sequence-note", "sequence-title-label",
+    "sequence-note-label", "sequence-move-up", "sequence-move-down", "sequence-warning", "reconcile-sequence",
+  ].map((id) => [id, node()]));
+  elements["assembly-audio"] = { paused: false, pause() { this.paused = true; } };
+  elements["sapi-audio"] = { paused: false, pause() { this.paused = true; } };
+  const { state, renderSequenceControls, saveSequenceUnit, moveSequenceUnit, evaluate } = loadWorkbench(elements, { createElement: node });
+  state.project = { segments: [
+    { id: "spoken", kind: "narration", status: "active", title: "Spoken", planned_duration_seconds: 5 },
+    { id: "card", kind: "visual_only", status: "active", title: "Card", note: "First idea", planned_duration_seconds: 3 },
+  ], unlinked_narration_ids: ["new-spoken"], sequence_order_conflict: true };
+  state.selectedId = "card";
+  evaluate("globalThis.sequenceCalls = []; editSequence = async (action, body) => { sequenceCalls.push({action, body}); };");
+  renderSequenceControls();
+  assert.match(elements["sequence-warning"].textContent, /new-spoken/);
+  assert.equal(elements["sequence-warning"].hidden, false);
+  assert.equal(elements["reconcile-sequence"].hidden, true);
+  assert.equal(elements["sequence-warning"].children[0].textContent, "Add new-spoken to end");
+  elements["sequence-warning"].children[0].click();
+  elements["sequence-duration"].value = "4.5";
+  elements["sequence-title"].value = "Card revised";
+  elements["sequence-note"].value = "Longer reveal";
+  saveSequenceUnit();
+  moveSequenceUnit(-1);
+  const calls = JSON.parse(evaluate("JSON.stringify(sequenceCalls)"));
+  assert.deepEqual(calls, [
+    { action: "link", body: { unit_id: "new-spoken", duration_seconds: 3 } },
+    { action: "update", body: { unit_id: "card", updates: { duration_seconds: 4.5, title: "Card revised", note: "Longer reveal" } } },
+    { action: "move", body: { unit_id: "card", target_id: "spoken", placement: "before" } },
+  ]);
+  assert.equal(elements["assembly-audio"].paused, true);
+  assert.equal(elements["sapi-audio"].paused, true);
+  state.selectedId = "spoken";
+  renderSequenceControls();
+  assert.equal(elements["sequence-title"].hidden, true);
+  assert.equal(elements["sequence-note"].hidden, true);
+});
+
+test("add visual-only unit submits after the selected unit and selects only a successful creation", async () => {
+  const elements = {
+    "new-visual-id": { value: "cutaway" },
+    "new-visual-title": { value: "Cutaway" },
+    "new-visual-duration": { value: "2.75" },
+    "new-visual-note": { value: "Show the interface" },
+    "add-visual-dialog": { closed: 0, close() { this.closed++; } },
+  };
+  const { state, addVisualUnit, evaluate } = loadWorkbench(elements);
+  state.project = { segments: [{ id: "spoken", kind: "narration" }] };
+  state.selectedId = "spoken";
+  evaluate("globalThis.sequenceCalls = []; globalThis.renderCount = 0; renderProject = () => { renderCount++; }; editSequence = async (action, body) => { sequenceCalls.push({action, body}); };");
+  const event = { prevented: false, preventDefault() { this.prevented = true; } };
+  await addVisualUnit(event);
+  assert.equal(event.prevented, true);
+  assert.equal(elements["add-visual-dialog"].closed, 0);
+  assert.equal(state.selectedId, "spoken");
+  assert.deepEqual(JSON.parse(evaluate("JSON.stringify(sequenceCalls)")), [{ action: "add", body: {
+    unit_id: "cutaway", after_id: "spoken", title: "Cutaway", duration_seconds: 2.75, note: "Show the interface",
+  } }]);
+  evaluate("editSequence = async (action, body) => { sequenceCalls.push({action, body}); state.project.segments.push({id: body.unit_id, kind: 'visual_only'}); };");
+  await addVisualUnit(event);
+  assert.equal(elements["add-visual-dialog"].closed, 1);
+  assert.equal(state.selectedId, "cutaway");
+  assert.equal(evaluate("renderCount"), 1);
 });
 
 test("insert control beside a mock beat opens a draft after that beat", () => {
