@@ -66,7 +66,7 @@ your-video-project/
     `-- narration_manifest.json  # ordered stable-ID segments and current spoken wording
 ```
 
-The workbench also creates a starter `video_project.json` when it starts and finds none, but that starter is intentionally blank. Prefer having Codex create a meaningful brief from your notes before opening the workbench. The brief is for the user and future AI sessions; it does not replace the narration manifest as the source of truth for approved spoken words.
+This is the minimum starting tree; the workbench also creates the project-root `sequence_manifest.json` the first time it opens a project, initializing it from the existing narration IDs and their current order. That manifest then owns video story order and planned durations, including any later visual-only units. Do not create blank narration segments for silent visual intervals. The workbench also creates a starter `video_project.json` when it starts and finds none, but that starter is intentionally blank. Prefer having Codex create a meaningful brief from your notes before opening the workbench. The brief is for the user and future AI sessions; it does not replace the narration manifest as the source of truth for approved spoken words.
 
 The narration example is a structural template, not a ready-to-generate voice configuration. Copy it from the VPS checkout, then replace its example project name, voice settings and placeholder segments. Do not assume its referenced voice files exist:
 
@@ -118,7 +118,7 @@ Requests are stored with the project data they concern:
 
 ```text
 audio/narration_requests/<stable-segment-id>/requests/SCR-001/{request.json,result.json}
-visual_layer/<take-id>/segments/<stable-segment-id>/requests/VIS-001/{request.json,result.json}
+visual_layer/<take-id>/segments/<sequence-unit-id>/requests/VIS-001/{request.json,result.json}
 ```
 
 From the project root, find pending or past requests with ripgrep:
@@ -141,8 +141,8 @@ The project's `AGENTS.md` is the instruction entry point for Codex sessions star
 
 ## 7. Add other layers when the narration is ready
 
-- **Visual Layer:** create a whole-spine visual take, then make one or more independent requests for each segment. Implementations and exported segment assets belong to the project. Read-only library references are optional; many visuals will be created specifically for the video.
-- **Music Layer:** music is project-wide. Each item starts at a stable segment ID and ends at another stable segment ID. Its JSON maps the intended cue; it does not acquire, mix, or render audio.
+- **Visual Layer:** create a whole-video visual take, then make one or more independent requests for each sequence unit, including visual-only units. Implementations and exported unit assets belong to the project. Read-only library references are optional; many visuals will be created specifically for the video.
+- **Music Layer:** music is project-wide. Each item starts at a sequence-unit ID and ends at another sequence-unit ID; the IDs may refer to narration-linked or visual-only units. Its JSON maps the intended cue; it does not acquire, mix, or render audio.
 - **Sound effects:** optional SFX planning is attached to the visual request it supports. Asset Finder can help locate media when you decide sourcing is needed.
 - **Final video:** assemble the prepared assets in the NLE or production tool you choose. A LOW render is an optional fast preview; a HIGH render is required for the final video.
 

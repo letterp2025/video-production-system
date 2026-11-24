@@ -1,19 +1,21 @@
 # Task Order: Visual Animation Plans Per Segment
 
-**Task ID:** VAP-001 | **Status:** Implemented (legacy workflow) | **Last updated:** 2026-11-23
+**Task ID:** VAP-001 | **Status:** Original per-segment plan implemented; superseded for new work by sequence-based visual requests | **Last updated:** 2026-11-24
+
+> Historical implementation record: VAP-001 describes the original per-narration-segment visual-plan feature. Its JSON files remain on disk, but the current workbench does not display, create, or open them. For new work, use the current sequence-based Visual Layer described in the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) and [Project Sequence Manifest task order](TASK-ORDER_PROJECT_SEQUENCE_MANIFEST.md).
 
 ## Implementation record
 
-- The original per-beat workflow creates one plan at `audio/visuals/<segment-id>.json` with tracked `ANM-*` recipe references or a custom-plan option. It is now under **Legacy per-beat visual plan** details in Visual Layer, not in the global header.
+- The original per-beat workflow created one plan at `audio/visuals/<segment-id>.json` with tracked `ANM-*` recipe references or a custom-plan option. This was the behavior when VAP-001 was implemented; the current interface no longer exposes it.
 - The version-1 schema is tracked at [`visual_plan.schema.json`](../../tools/audio_narration_generator/visual_plan.schema.json). Creation is atomic and non-overwriting; the workbench checks the current manifest hash, rejects unsafe paths/symlinks, and opens an existing plan in the operating system's default app.
 - Each plan stores the selected segment ID, title, and approved-text SHA-256. A text hash mismatch reports **Needs review** without changing the file. The workflow does not render or modify narration/audio.
 - Workbench tests and user documentation cover this legacy workflow in [`tools/audio_narration_generator/README.md`](../../tools/audio_narration_generator/README.md#legacy-per-beat-visual-plan).
 - The renderer/preview/editor integration remains a separate follow-up and is not part of VAP-001.
-- **Architecture follow-up:** Whole-spine takes are now implemented under project-root `visual_layer/<take-id>.json`; see the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). Existing per-beat plans remain intact and usable, but there is no automatic importer. Creators can manually carry intent into a chosen take without changing the original.
+- **Architecture follow-up:** Whole-video takes and per-sequence-unit requests are now implemented under project-root `visual_layer/<take-id>.json`; see the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). Existing per-beat plan files remain intact on disk but are not shown or imported. Creators can manually carry intent into a chosen take without changing the original.
 
 ## Current placement
 
-The original header placement in this task's historical requirements was superseded by the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). The global header now contains project context and narration transport only. The legacy plan workflow remains available in Visual Layer; new visual work should use whole-spine takes.
+The original header placement in this task's historical requirements was superseded by the [Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md). The global header now contains project context and narration transport only. Legacy plan files remain untouched but are not available through the current UI; new visual work should use sequence-based takes and requests.
 
 ## Objective
 

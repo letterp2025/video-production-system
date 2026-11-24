@@ -6,8 +6,9 @@ This folder contains one video project. Keep project-specific scripts, audio, vi
 
 - `video_project.json` is the creative brief for the user and future AI sessions: project idea, creative direction, rough conversational narration outline, inspirations, and manually maintained status notes. Preserve the user's voice and uncertainty; do not invent facts or inspirations.
 - `audio/narration_manifest.json` is the source of truth for narration segment IDs, order, titles, and approved spoken words. Keep IDs stable when editing words or reordering segments. Do not make unrequested changes to approved wording.
-- Visual take manifests and per-segment visual requests are under `visual_layer/`. Each request is an independent attempt. Keep its `request.json` as the brief and record progress and outputs in its paired `result.json`.
-- Project-wide music mapping is under `audio/music/manifest.json` when created. Music ranges use stable narration segment IDs. Optional SFX planning belongs beside the visual request it supports.
+- `sequence_manifest.json` is the source of truth for video story order and planned durations. It can contain narration-linked and visual-only units; do not add empty narration records to represent silent visual intervals.
+- Visual take manifests and per-unit visual requests are under `visual_layer/`. Each request is an independent attempt. Keep its `request.json` as the brief and record progress and outputs in its paired `result.json`.
+- Project-wide music mapping is under `audio/music/manifest.json` when created. Its `start_segment_id` and `end_segment_id` values refer to IDs in `sequence_manifest.json`, including visual-only units. Optional SFX planning belongs beside the visual request it supports.
 
 ## Working with VPS
 

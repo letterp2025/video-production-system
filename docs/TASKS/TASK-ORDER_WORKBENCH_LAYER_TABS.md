@@ -1,6 +1,8 @@
 # Task Order: Workbench Layer Tabs
 
-**Task ID:** WLT-001 | **Status:** Implemented | **Last updated:** 2026-11-23
+**Task ID:** WLT-001 | **Status:** Initial four-tab layout implemented; parts superseded by the current three-layer sequence workflow | **Last updated:** 2026-11-24
+
+> Historical implementation record: this task captures the initial beat-focused four-tab layout. The current workbench has three top-level tabs (Script and Narration, Visual, Music), nests SFX in Visual, and uses `sequence_manifest.json` for video story order. Use the [current Segment Layers and Workbench Layout task order](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) and [Project Sequence Manifest task order](TASK-ORDER_PROJECT_SEQUENCE_MANIFEST.md) as the source of truth. The original requirements below are retained for history, not as current behavior.
 
 ## Implementation record
 

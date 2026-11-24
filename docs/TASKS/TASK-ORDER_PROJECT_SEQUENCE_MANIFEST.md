@@ -1,38 +1,39 @@
 # Task Order: Project Sequence Manifest
 
-**Task ID:** PSM-001 | **Status:** Implemented in the workbench; verification pending in a real project | **Last updated:** 2026-11-24
+**Task ID:** PSM-001 | **Status:** Implemented, regression-tested, and smoke-checked against an existing video project | **Last updated:** 2026-11-24
 
 ## Objective
 
-Make the workbench's left-hand sequence represent the ordered *video story*, not only the narration manifest's spoken beats. A video can contain visual-only openings, pauses, montages, transitions, and outros before, between, or after spoken segments. Introduce project-root `sequence_manifest.json` as the source of truth for the order of those units. Every unit has a required, editable planned duration. VPS remains a brainstorming and asset-preparation tool, not a nonlinear editor (NLE).
+Give the video project one canonical ordered story sequence that can include narration-linked units and visual-only units. Keep approved speech in `audio/narration_manifest.json`, while `sequence_manifest.json` owns story order and editable planned durations. VPS remains a brainstorming and asset-preparation workspace; the selected non-linear editor (NLE) assembles and renders the final video.
 
-## Why this is needed
+## Problem addressed
 
-Today `audio/narration_manifest.json` owns both approved spoken text and the order shown in the left Beats rail. Narration validation requires non-empty text. Visual take entries, visual request folders, and project-wide music boundaries use stable narration IDs. A silent visual unit therefore cannot be inserted without pretending it is narration, and music cannot start at a visual-only opening or end at a visual-only outro.
+The narration manifest must contain real spoken segments, so it cannot represent a silent opening, pause, montage, or outro. Using it as the only video order also made it impossible to anchor visuals and project-wide music to a visual-only interval. The sequence manifest now provides that shared story order without adding empty narration placeholders or duplicating approved script text.
 
-Keep the narration manifest dedicated to speech. Do not solve this by putting empty-text placeholders in it. `video_project.json` stays the creative brief/status record; it is not the sequence. Visual take manifests continue to represent alternative treatments of the whole video; they do not each own a competing story order.
+`video_project.json` remains the creative brief and manually maintained status record. Whole-video visual takes remain alternative treatments of the sequence; they do not own competing story orders.
 
-## User workflow
+## Current user workflow
 
-1. Open an existing video project. VPS finds or safely initializes `sequence_manifest.json` from the current narration segment order, preserving stable narration IDs and leaving existing project files untouched. Initialization happens only when the file is absent; a malformed existing file is reported, not replaced.
-2. Use the shared left rail to select and reorder sequence units. A narration unit links to its existing narration segment. A visual-only unit has its own stable ID and title, with no narration segment and no spoken words. The rail clearly distinguishes the two kinds and keeps the stable ID visible.
-3. Add a visual-only unit before, after, or between existing units. Give it a title, editable duration, and optional editorial note/intent. Change its position or planned duration without generating a voice take.
-4. In Script and Narration Layer, a narration unit retains the current editor, Scratchpad, SAPI preview, and F5-TTS workflow. A visual-only unit shows a clear no-narration state; it must not offer narration editing, TTS generation, or a misleading silent audio take.
-5. In Visual Layer, choose a whole-video take and add/review repeated visual requests for either kind of sequence unit. Visual-only work uses the same project-owned implementation/export handoff and optional candidate SFX, without requiring source narration text.
-6. In Music Layer, anchor a project-wide item to the start/end of any sequence unit, including visual-only units. Show IDs and current titles for both boundaries.
-7. Hand prepared narration, visual exports, SFX, music choices, sequence order, and planned durations to the chosen NLE. The NLE determines final frame timing, assembly, mixing, and render. A LOW preview remains optional; a reviewed HIGH render is the final product.
+1. On workbench startup, VPS loads the project-root `sequence_manifest.json`. If it is absent, VPS creates it from every narration segment in its current order, preserving each narration ID. A malformed existing file is reported and left untouched.
+2. Use the shared Sequence rail to select and move narration-linked or visual-only units. Their stable IDs remain visible. The sequence order is the video story order; narration playback contains only speech.
+3. Add a visual-only unit for a silent opening, pause, montage, transition, or outro. Give it a unique ID, title, editable planned duration, and optional editorial note. It creates no narration text or audio take. A new visual-only unit starts at three seconds.
+4. Edit a narration-linked unit's text and title in Script and Narration. Edit its planned duration in the sequence. The selected WAV length supplies an initial duration when available; otherwise VPS uses a word-count estimate. Later audio changes do not silently replace a duration the user has edited.
+5. In Visual Layer, create or select a whole-video take and make repeatable visual requests for either kind of sequence unit. Narration-linked requests retain their text-based source hash. Visual-only requests use a hash derived from the unit's title, note, and planned duration. Optional candidate-specific SFX stays beside its visual request.
+6. In Music Layer, create or edit project-wide music items. The existing `start_segment_id` and `end_segment_id` field names now refer to sequence-unit IDs, including visual-only units. VPS displays the boundary IDs, titles, and positions.
+7. Prepare the narration, selected visual exports, music and SFX references, sequence order, and planned durations for the chosen NLE. LOW is an optional preview. A reviewed HIGH render from the NLE is the final video.
 
 ## Data ownership and storage
 
-| File | Responsibility after implementation |
+| File | Current responsibility |
 |---|---|
-| Project-root `sequence_manifest.json` | Canonical ordered list of video units, their stable IDs, kind, title/context, and required planned duration. It does not contain approved narration text, media, or edit tracks. |
-| `audio/narration_manifest.json` | Approved words, voice settings, segment status, narration takes, and the speech-only playback/assembly order. A linked narration ID remains stable. |
-| Project-root `video_project.json` | Creative identity, rough outline, inspirations, and manually maintained project status; not an ordered sequence. |
-| `visual_layer/<take-id>.json` and request folders | Alternative whole-sequence visual directions and candidate work keyed by sequence-unit ID; the selected take remains in `visual_layer/selected_take.json`. |
-| `audio/music/manifest.json` | Project-wide music items anchored to start/end sequence-unit IDs. Candidate SFX remains with visual requests. |
+| Project-root `sequence_manifest.json` | Canonical ordered story units, stable IDs, unit kind, and required planned duration. It does not store approved narration text, media, or an NLE edit track. |
+| `audio/narration_manifest.json` | Approved spoken words, narration settings/takes, and speech-only order. Narration units link to matching stable narration IDs. |
+| Project-root `video_project.json` | Creative identity, rough narration outline, inspirations, and manually maintained project status. |
+| `visual_layer/<take-id>.json` and request folders | Alternative whole-video visual directions and candidate requests/results keyed by sequence-unit ID. `visual_layer/selected_take.json` stores take selection. |
+| `audio/music/manifest.json` | Project-wide music items with start and end sequence-unit references. |
+| `sfx.json` inside a visual request | Optional sound-effect plan associated with that specific visual candidate. |
 
-Illustrative project layout (the folders are not all pre-created):
+Example project layout (workbench-created files appear as the relevant work begins):
 
 ```text
 video-project/
@@ -47,19 +48,19 @@ video-project/
     |-- v_layer_1.json
     `-- v_layer_1/
         `-- segments/
-            |-- opening-card/          # visual-only unit ID
+            |-- opening-card/          # visual-only sequence-unit ID
             |   `-- requests/VIS-001/
             |       |-- request.json
             |       `-- result.json
-            `-- found-effectcraft/     # linked narration ID
+            `-- found-effectcraft/     # narration-linked sequence-unit ID
                 `-- requests/VIS-001/
                     |-- request.json
                     `-- result.json
 ```
 
-## Proposed sequence contract
+## Sequence contract and behavior
 
-The precise versioned JSON Schema will be written during implementation. This example establishes the intended ownership and required duration field:
+The implemented format is defined in [`sequence_manifest.schema.json`](../../tools/audio_narration_generator/sequence_manifest.schema.json). A minimal example:
 
 ```json
 {
@@ -77,54 +78,30 @@ The precise versioned JSON Schema will be written during implementation. This ex
       "kind": "narration",
       "narration_segment_id": "found-effectcraft",
       "duration_seconds": 5.0
-    },
-    {
-      "id": "interface-montage",
-      "kind": "visual_only",
-      "title": "Interface montage",
-      "duration_seconds": 4.0
     }
   ]
 }
 ```
 
-- Array order is story order. IDs are unique across both unit kinds and remain stable when a unit is renamed, moved, or its duration changes. A narration unit links to exactly one existing narration segment; a visual-only unit must not have a narration link. Avoid duplicated narration links. Existing narration IDs should be reused as sequence-unit IDs for a straightforward migration.
-- `duration_seconds` is required on **every** unit, finite, positive, and editable. It is a *planned target*, not a guarantee of rendered duration or a frame-accurate timestamp. On creation, use a documented editable initial value: measured selected narration audio duration when available, otherwise a clearly labeled estimate; use a simple default such as 3 seconds for a new visual-only unit. Do not silently overwrite a user's duration when audio takes change.
-- A narration unit's approved text and voice controls are resolved from the linked narration manifest, not copied into the sequence. The UI may display its current narration title; it must not silently fork two editable titles. Decide in implementation whether narration titles are resolved live and the sequence title is an optional fallback, then test that rule.
-- A visual-only unit's note is editorial intent, not a second visual request. It can be present before a take or request exists. Units without visual work are valid and visibly pending.
-- Validate bounded file size, unique/valid IDs, valid links, sensible lengths, and safe project-relative paths where applicable. Preserve invalid or unknown existing files for inspection rather than rewriting them.
+- Array order is story order. Unit IDs are unique across both kinds. A narration unit uses the same ID as its `narration_segment_id`; a visual-only unit must not collide with a narration ID.
+- Every unit requires a finite, positive `duration_seconds` no greater than 86,400 seconds. Durations are planning targets, not frame-accurate timings or promises about final rendered length.
+- A narration unit's title and spoken text come from the linked narration manifest. A visual-only unit owns its title and optional note. Approved words are never copied into the sequence file.
+- Initial migration includes every narration record, including inactive and deleted records, so existing IDs and visual mappings are retained. New narration beats created in the workbench are linked to the sequence. Narration added outside the workbench appears as unlinked until the user explicitly links it.
+- Moving narration units also updates narration playback order when every narration segment is linked. If sequence and narration orders diverge, VPS reports the mismatch and requires explicit reconciliation before narration playback. It does not discard sequence units to repair the mismatch.
+- A malformed existing sequence is reported without replacement. The initializer only creates the file when it is absent.
+- Existing per-segment music/SFX files and old `audio/visuals/` plans are left untouched; they are not imported into the current layer workflow.
 
-## Cross-manifest behavior and migration
+## Verification record
 
-- Existing projects have no sequence manifest. First initialization derives ordered narration units from the current narration array, including inactive units so no historical mapping disappears. The rail's existing active/inactive/deleted filters need explicit sequence-aware behavior; do not silently drop or delete inactive/deleted records. Preserve each narration ID and its associated visual request folders.
-- Once a sequence manifest exists, its array controls the left story order. Adding/removing a narration segment must be reconciled explicitly: flag unlinked narration segments and missing/deleted links for review; never silently discard sequence units or rewrite visual take files. Define which UI action inserts a new narration unit into the sequence.
-- Narration-only SAPI/F5 playback and assembled audio cannot be presented as a preview of visual-only intervals. Keep those controls scoped to spoken segments, with clear labeling about what the preview omits. Define and test how a narration unit's speech-only playback order is kept consistent with the sequence order when units are moved; do not maintain two contradictory authoritative orders without a reconciliation rule.
-- Expand visual take validation/scaffolding/status to all active sequence units. For narration-linked requests, retain source-text hash staleness checks. For visual-only requests, introduce a separate source revision/fingerprint derived from that unit's relevant brief/context; do not invent empty narration text or misuse `source_text_sha256`. Version the request/result contract and keep legacy narration-linked records readable.
-- Update music anchors from narration-only `start_segment_id`/`end_segment_id` to sequence-unit references. Design a versioned migration/compatibility rule so existing music items keep their original IDs and intended boundaries. Validate order against the sequence array. Music remains a planning map, not playback or mixing.
-- The older `audio/visuals/`, per-segment music, and per-segment SFX formats remain untouched legacy files. No implementation step may remove existing media, requests, takes, or project files merely because the new sequence is introduced.
+- Python workbench regression suite and JavaScript browser-interaction suite pass, including sequence initialization, adding and moving visual-only units, narration-order reconciliation, music anchors, visual request behavior, and collision protection between narration and visual-only IDs.
+- A smoke check confirmed that the workbench loaded an existing sequence manifest and reconciled its narration links without an ordering conflict. Project-specific details are intentionally omitted.
+- Request/result schema versions, project-relative path validation, and non-destructive handling of malformed manifests are documented in the [workbench README](../../tools/audio_narration_generator/README.md) and [workflow guide](../../guides/VIDEO_PRODUCTION_WORKFLOW.md).
 
-## Implementation phases
+## Deferred work and boundaries
 
-1. **Contract and migration tests:** define `sequence_manifest.json` schema, duration/default semantics, ID/link validation, safe initialization, and fixtures for existing projects. Decide the narration-title and speech-order reconciliation rules before wiring UI mutations.
-2. **Project loading and operations:** load/create the sequence, expose ordered units, add/reorder/edit visual-only units, reconcile narration additions/status changes, and guard malformed files without destructive repair.
-3. **Shared rail and narration workspace:** relabel the Beats rail to reflect story units, show type/title/ID/duration, preserve selection across tabs, provide a clear no-narration state, and keep narration preview/generation speech-only.
-4. **Visual takes and handoff:** key take entries and request folders by sequence-unit ID, allow visual-only requests and candidate SFX, introduce appropriate visual-only revision validation, preserve old requests, and update whole-take completeness against the sequence.
-5. **Music and NLE handoff:** migrate music anchor interpretation, display visual-only boundaries, and provide an exportable/readable sequence handoff showing planned durations without implementing an editor or render pipeline.
-6. **Regression and documentation:** test old-project initialization, 10-active/26-inactive-style manifests, visual-only insertion/reordering, narration editing and playback, old visual results, music migration, malformed files, and narrow/keyboard-accessible UI. Update the workflow guide and tool README only when implementation lands.
+The sequence is an asset-planning handoff, not an NLE timeline or edit decision list. Frame-accurate timing, transitions, audio mixing, and final assembly/rendering remain with the chosen NLE. LOW rendering is optional; HIGH rendering and review are required to complete a video project. Testing how the prepared assets move into a chosen NLE belongs to a separate end-to-end production pilot.
 
-## Acceptance checks
-
-- A new or migrated project shows narration and visual-only units together in one ordered rail, and every unit has an editable required planned duration.
-- `narration_manifest.json` still contains only real spoken segments; no blank-text workaround is needed.
-- A visual-only unit can have multiple requests/candidates in each whole-video visual take, with optional candidate-specific SFX. Existing narration visual requests remain intact.
-- Music can start or end on a visual-only unit; existing narration-anchored items retain their meaning after migration.
-- Stable IDs survive reordering and renaming. Missing/invalid cross-references are reported, not silently repaired or dropped.
-- SAPI/F5 narration previews remain usable and are accurately described as speech-only. VPS still does not assemble the final video or execute visual renderers.
-- No legacy project JSON, media, generated audio, or exports are deleted as part of migration.
-
-## Boundaries and related documents
-
-This is a planned change, not a claim that the workbench or existing JSON already supports visual-only units. Do not implement the schema, migration, UI, or project-file edits in this task-order pass. Exact frame timing, audio mixing, NLE integration, and final render are separate production work.
+## Related documents
 
 - [Video Production Workflow](../../guides/VIDEO_PRODUCTION_WORKFLOW.md)
 - [Segment Layers and Workbench Layout](TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md)

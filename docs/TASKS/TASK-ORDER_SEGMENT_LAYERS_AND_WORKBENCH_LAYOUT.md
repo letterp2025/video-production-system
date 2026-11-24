@@ -1,21 +1,22 @@
 # Task Order: Segment Layers and Workbench Layout
 
-**Task ID:** SLW-001 | **Status:** Target layer workflow implemented; NLE composition/rendering remains out of scope | **Last updated:** 2026-11-23
+**Task ID:** SLW-001 | **Status:** Layer workflow implemented; sequence-manifest extension documented in PSM-001; NLE composition/rendering remains out of scope | **Last updated:** 2026-11-24
 
 ## Follow-up implementation record
 
-- The top-level workbench has Script and Narration, Visual, and Music tabs. Visual Layer now presents a compact take-first flow for the selected segment. The old per-beat visual-plan and SFX mapping panels have been removed from the interface; existing project files are left untouched.
-- The request UI no longer presents legacy per-segment intent, renderer, or implementation fields. Its sequence is: choose/create a whole-video take, choose a segment, add a request, then review its result JSON after terminal Codex updates it. Legacy project JSON is not deleted or migrated.
-- Each take/segment can index multiple `VIS-*` request folders. Each folder contains a preserved `request.json` brief and a separate `result.json` scaffold; an optional `sfx.json` belongs to that candidate. A completed candidate can be selected independently per segment. Version-one take manifests without request fields remain valid.
+- The top-level workbench has Script and Narration, Visual, and Music tabs. Visual Layer now presents a compact take-first flow for the selected sequence unit. The old per-beat visual-plan and SFX mapping panels have been removed from the interface; existing project files are left untouched.
+- The request UI no longer presents legacy per-segment intent, renderer, or implementation fields. Its sequence is: choose/create a whole-video take, choose a sequence unit, add a request, then review its result JSON after terminal Codex updates it. Legacy project JSON is not deleted or migrated.
+- Each take/unit can index multiple `VIS-*` request folders. Each folder contains a preserved `request.json` brief and a separate `result.json` scaffold; an optional `sfx.json` belongs to that candidate. A completed candidate can be selected independently per unit. Version-one take manifests without request fields remain valid.
 - Visual Layer contains the read-only library catalog: public/private scope, reference/element/animation filters, search, detail notes, and local preview. Attachments store only scope, catalog category, stable ID, and a per-reference note in the new request. Optional private library discovery uses `--library-config` and a local config file.
 - The file handoff is intentionally simple: VPS creates the request JSON; a separate terminal Codex session reads it, writes the project implementation/export, and can update `result.json`; VPS reads the result after refresh. Visual Layer does not host a Codex service, launch Codex, or run renderer code.
-- Every layer view has one shared selected-narration context strip with the segment title/position and stable ID. The left segment list also keeps each ID visible.
-- Music is represented by one project-wide `audio/music/manifest.json`. VPS creates/opens it, validates stable-ID range references, and displays each item's start/end position, title, and ID. Music JSON remains a data interface; it does not find, download, play, mix, or render audio.
+- Every layer view has one shared selected-story-unit context strip with the title/position and stable ID. The Sequence rail keeps each ID visible.
+- Music is represented by one project-wide `audio/music/manifest.json`. VPS creates/opens it, validates range references against `sequence_manifest.json`, and displays each item's start/end position, title, and ID. The existing `start_segment_id` and `end_segment_id` property names now hold sequence-unit IDs. Music JSON remains a data interface; it does not find, download, play, mix, or render audio.
+- Project-root `sequence_manifest.json` owns video story order and planned durations. Its units can link to narration segments or be visual-only; narration text and speech-only order remain in `audio/narration_manifest.json`. See the [Project Sequence Manifest task order](TASK-ORDER_PROJECT_SEQUENCE_MANIFEST.md) for migration and behavior details.
 
 ## Implementation record
 
-- Added project-root `visual_layer/<take-id>.json` whole-spine visual take manifests and `visual_layer/selected_take.json` selection state. Creating a take scaffolds an entry keyed by every current stable narration segment ID, selects it, and leaves each entry pending for custom project work.
-- The current Visual Layer presents take direction, selected segment identity, and repeatable request history. Take JSON can be opened in the operating system's default editor. New take IDs cannot overwrite existing files. Renderer references are never executed.
+- Added project-root `visual_layer/<take-id>.json` whole-video visual take manifests and `visual_layer/selected_take.json` selection state. Creating a take scaffolds an entry keyed by every current sequence-unit ID, selects it, and leaves each entry pending for custom project work. Readiness is evaluated against active sequence units.
+- The current Visual Layer presents take direction, selected sequence-unit identity, and repeatable request history. Take JSON can be opened in the operating system's default editor. New take IDs cannot overwrite existing files. Renderer references are never executed.
 - The predecessor UI added optional per-beat `audio/music/<segment-id>.json` and `audio/sfx/<segment-id>.json` workflows. The current Music Layer uses the project-wide manifest; old per-beat files remain untouched and are not imported. Standalone SFX is superseded in the current interface by optional candidate-specific `sfx.json` inside a visual request. Existing files remain untouched.
 - Added strict schemas and project-confined path validation, plus regression coverage for stable IDs, take isolation, stale text, malformed/unsafe mappings, and local API routes.
 - Older `audio/visuals/<segment-id>.json` plans and per-segment SFX mapping files are no longer exposed in the workbench UI. Existing files are not moved, deleted, or imported.
@@ -23,93 +24,96 @@
 
 ## Objective
 
-Use stable narration segments as the spine for brainstorming, selecting, and preparing the assets that will be assembled in a separate non-linear video editor (NLE). VPS is an asset-management and preparation workspace, not an NLE, mixer, or final video renderer. Visual Layer is a JSON interface for a separate terminal Codex workflow; it is not a Codex server or renderer launcher. This document records the implemented layer workflow and its explicit NLE boundary.
+Use the project sequence as the spine for brainstorming, selecting, and preparing assets for a separate non-linear video editor (NLE). Sequence units may be narration-linked or visual-only. VPS is an asset-management and preparation workspace, not an NLE, mixer, or final video renderer. Visual Layer is a JSON interface for a separate terminal Codex workflow; it is not a Codex server or renderer launcher. This document records the implemented layer workflow and its explicit NLE boundary.
 
 The Script and Narration Layer follows the same file-first principle for editorial AI requests: VPS creates a stable-ID-scoped `request.json` and paired `result.json`, including the full root project manifest as creative context; the user can process them with any terminal AI assistant. A local Codex CLI action is optional. VPS does not host a Codex server or require Codex for this handoff. See the [narration workbench guide](../../tools/audio_narration_generator/README.md#ai-request-and-privacy) for its path and JSON contract.
 
 ## Product intent and target design
 
 - Keep **Script and Narration Layer**, **Visual Layer**, and **Music Layer** as the three top-level work areas. Sound effects (SFX) belong inside **Visual Layer**, alongside the visual take and segment they support; do not expose SFX as a separate top-level tab.
-- A visual take is an alternative treatment of the whole narration spine. Its manifest maps stable narration IDs to project-specific visual work. A take may use different visual treatment and SFX for a segment than another take. EffectCraft produces a separate visual asset for each segment; VPS organizes the work and asset references rather than assembling those exports into a timeline.
-- Within a selected whole-spine take, each segment can have multiple distinct visual requests over time. Each request asks external Codex to create or revise that segment's project-owned element, animation, and export. Keep previous requests and completed candidates; a new request never overwrites an earlier attempt and does not create a new whole-spine take.
+- A visual take is an alternative treatment of the whole video sequence. Its manifest maps stable sequence-unit IDs to project-specific visual work. A take may use different visual treatment and SFX for a unit than another take. EffectCraft produces separate visual assets for individual units; VPS organizes the work and asset references rather than assembling those exports into a timeline.
+- Within a selected whole-video take, each sequence unit can have multiple distinct visual requests over time. Each request asks external Codex to create or revise that unit's project-owned element, animation, and export. Keep previous requests and completed candidates; a new request never overwrites an earlier attempt and does not create a new whole-video take.
 - A visual request can be a custom text-only brief with no library use, or can attach one or more entries from the Visual Library Browser. Each attached entry can have its own user note describing how it should inform or be adapted for the request. Library use is optional.
-- Music is a project-wide list, not an independent music layer per segment. Each music item identifies a start segment and an end segment: it starts at the beginning of the start segment and ends at the end of the end segment. The UI should make those segment anchors clear.
-- Show the stable narration segment ID clearly in the selected-segment context throughout the layer UI. Display IDs, as well as titles, for music start/end anchors so references remain unambiguous when titles change or beats are reordered.
+- Music is a project-wide list, not an independent music layer per segment. Each music item identifies a start and end sequence-unit ID: it starts at the beginning of the start unit and ends at the end of the end unit. Either boundary may refer to a narration-linked or visual-only unit.
+- Show the selected sequence unit's stable ID clearly in shared context throughout the layer UI. Display IDs, as well as titles, for music start/end anchors so references remain unambiguous when titles change or units are reordered.
 - VPS supports ideation and preparation: developing script/narration, exploring visual takes, locating/referencing assets, and recording handoff decisions. The chosen NLE assembles the prepared narration, visual exports, music, and SFX and renders the final video. A fast LOW preview is optional; the reviewed HIGH render is the required final product. Do not imply VPS performs that assembly or final render.
 - DaVinci Resolve and Artcraft are candidate NLEs, not a decision. The user considers DaVinci Resolve mature; Artcraft is described by the user as a free, open-source Premiere-like option that is not yet mature and is slow. Do not build NLE-specific integration until an NLE is selected and separately scoped.
 
 The Visual Library Browser is available inside the optional request form in Visual Layer. Attachment records the entry's library category and stable ID plus the user's note; it does not copy or execute library code. The workbench creates a request JSON file. The user's separate terminal Codex session reads that file and writes project-owned implementation/assets; that session may update the separate result JSON. VPS shows the result after refresh. Visual Layer does not provide a Codex server, launch Codex, or run renderer code.
 
-Still-open design details include exact within-segment SFX timing, whether SFX needs trim/fade fields, and whether the first music workflow needs overlapping items or crossfades. Asset discovery may use Asset Finder; its role is sourcing, while the layer manifests record the chosen project-local assets and intent.
+Deferred audio details include exact within-unit SFX timing, trim/fade fields, overlapping music items, and crossfades. Asset discovery may use Asset Finder; its role is sourcing, while layer manifests record chosen project-local assets and intent. These details do not change the current JSON handoff or imply that VPS plays or mixes audio.
 
 ## Current state and boundaries
 
-- The narration manifest owns segment ID, spoken order, approved text, status, voice settings, and take selection. The workbench already edits and previews these.
-- The canonical visual source is a project-root `visual_layer/` folder containing multiple manifest JSON files. Each manifest is one alternative visual take for the entire narration spine. Older `audio/visuals/<segment-id>.json` plan files may remain on disk but are not part of the current workbench workflow.
-- A take such as `v_layer_1.json` can try a retro direction across the video; `v_layer_2.json` can try another direction and treat an individual segment differently. Selecting a take selects its mapping for the whole spine. Both manifests remain available, and changing one take does not silently change the other.
-- Every take manifest defines an overall creative direction and indexes the stable narration IDs from `audio/narration_manifest.json`. The segment request folders hold repeatable briefs and result records; those results point to project-relative implementation and export files. A request may use EffectCraft, Manim, or GSAP.
+- `sequence_manifest.json` owns overall video story order and planned durations. `audio/narration_manifest.json` owns narration IDs, approved text, status, voice settings, narration takes, and speech-only order. Narration-linked sequence units use the same stable ID as their narration segment.
+- The canonical visual source is a project-root `visual_layer/` folder containing multiple manifest JSON files. Each manifest is one alternative visual take for the entire video sequence. Older `audio/visuals/<segment-id>.json` plan files may remain on disk but are not part of the current workbench workflow.
+- A take such as `v_layer_1.json` can try a retro direction across the video; `v_layer_2.json` can try another direction and treat an individual unit differently. Selecting a take selects its mapping for the whole sequence. Both manifests remain available, and changing one take does not silently change the other.
+- Every take manifest defines an overall creative direction and indexes stable sequence-unit IDs. The JSON property is still named `segments` for compatibility, and request folders retain the `segments/<unit-id>/` path; neither is restricted to narration units. Request briefs and result records point to project-relative implementation and export files. A request may use EffectCraft, Manim, or GSAP.
 - Most elements and animations will be created for the video project. Reusable library recipes or elements are optional references, never prerequisites. There is no separate plan JSON required before adding an implementation to a take manifest.
-- The take schema retains optional legacy direct implementation fields for existing manifests and also accepts a per-segment request ID list and selected completed request ID. New Visual Layer work uses request folders, each with its own brief, result, and optional multiple library references/notes. Existing take manifests remain readable; legacy fields are not the new request workflow.
+- The take schema retains optional legacy direct implementation fields for existing manifests and also accepts a per-unit request ID list and selected completed request ID. New Visual Layer work uses request folders, each with its own brief, result, and optional multiple library references/notes. Existing take manifests remain readable; legacy fields are not the new request workflow.
 - Music uses `audio/music/manifest.json`, one project-wide list. Existing per-segment music mappings are legacy files and are not imported, rewritten, or shown. Candidate-specific SFX JSON stays with its visual request. The old per-segment SFX and visual-plan panels are not shown in the current interface; existing files remain untouched.
 - The [Asset Finder](../../tools/asset_finder/README.md) can search and download audio with a source/license receipt, but it is not integrated into the workbench and does not make a licensing decision.
-- The current top bar contains project identification and narration playback controls. Keep per-segment layer controls in their layer workspaces, not in the global top bar.
+- The current top bar contains project identification and narration playback controls. Keep sequence-unit layer controls in their layer workspaces, not in the global top bar.
 
 ## User workflow
 
-The numbered steps below describe the current interface and project-wide Music model.
+The numbered steps below describe the current interface and project-wide Music model. For exact sequence initialization, duration defaults, and speech-order reconciliation, see the [Project Sequence Manifest task order](TASK-ORDER_PROJECT_SEQUENCE_MANIFEST.md).
 
-1. Open the video project and select a visual take manifest in **Visual Layer**, or create a new one with a unique `v_layer_*` ID, title, and whole-video creative direction. Creation scaffolds pending entries for the narration IDs and selects the new take.
-2. Select a beat in the left-hand sequence. Its stable ID, not its position, locates that beat inside the chosen take and the other layers. Reordering beats preserves the mappings.
-3. In Visual Layer, add a visual request for the selected stable-ID segment. Write a short custom brief, optionally choose a renderer, and optionally attach library references with notes. VPS saves the brief and result scaffold as project JSON. The task-specific UI keeps take selection, segment identity, and request history together; the raw take JSON can still be opened when needed.
-4. Edit approved words and narration audio in the existing script/audio workflow. A visual take uses the same narration spine; editing narration does not silently copy or rewrite the take's implementation files.
-5. Open **Music** to create or edit the project-wide `audio/music/manifest.json`. Each item starts at the beginning of its start segment and ends at the end of its end segment. Sound effects belong to a visual request and can be added from that request's details. The older standalone per-segment Music/SFX files are not exposed in the current UI.
+1. Open the video project and select a visual take manifest in **Visual Layer**, or create a new one with a unique `v_layer_*` ID, title, and whole-video creative direction. Creation scaffolds entries for every current sequence-unit ID and selects the new take; only active units count toward take readiness.
+2. Select a narration-linked or visual-only unit in the left-hand Sequence rail. Its stable ID, not its position, locates that unit inside the chosen take and other layers. Reordering units preserves visual mappings; narration-linked order is synchronized with speech order when the narration links are complete.
+3. In Visual Layer, add a visual request for the selected unit. Write a short custom brief, optionally choose a renderer, and optionally attach library references with notes. VPS saves the brief and result scaffold as project JSON. The task-specific UI keeps take selection, unit identity, and request history together; the raw take JSON can still be opened when needed.
+4. Edit approved words and narration audio in the existing script/audio workflow. Visual-only units have no narration text or audio take. Editing narration does not silently copy or rewrite visual implementation files.
+5. Open **Music** to create or edit the project-wide `audio/music/manifest.json`. Each item starts at the beginning of its start sequence unit and ends at the end of its end sequence unit. The JSON property names remain `start_segment_id` and `end_segment_id`; their values are IDs from the story sequence. Sound effects belong to a visual request and can be added from that request's details. Older standalone per-segment Music/SFX files are not exposed in the current UI.
 6. Source and review assets separately with Asset Finder when ready. VPS validates project-relative path shape and containment; it does not confirm that an asset file exists, record provenance, or decide usage rights.
-7. Switch beats or visual takes and see the corresponding status, Music ranges, and visual request history. If approved text changes, keep existing Music items and visual requests; do not silently retime or delete them.
+7. Switch sequence units or visual takes and see the corresponding status, Music ranges, and visual request history. If approved text or a visual-only unit's source context changes, keep existing Music items and requests; mark stale visual candidates for review rather than silently retiming or deleting them.
 
 ### Layer workflow
 
-1. Develop and review the script/narration on the stable-ID narration spine.
-2. Select a whole-spine visual take and a stable-ID segment within it. Add a visual request for that segment. It may be a custom brief without library use, or attach one or more library entries with a note for each about what to reuse, adapt, or avoid. Alternative whole-spine takes remain separate; repeated requests inside one take are successive attempts for that segment, not new takes.
-3. Use a separate Codex session in a terminal to read the request JSON from the project. Codex creates or updates the segment's project-owned element/animation/export files and can record status and project-relative paths in `result.json`. VPS reads and displays that JSON after refresh. New requests create new IDs and preserve previous attempts/results. VPS does not need a Codex server or launch Codex.
-4. Compare completed candidates and their optional SFX plans for a segment, then select the candidate to use in that take. Keep other attempts available. The selected whole-spine take can retain a chosen candidate for each narration segment.
-5. Create `audio/music/manifest.json` from the Music tab. The user or terminal Codex adds items to this JSON with start/end stable narration IDs; VPS reloads it and displays each boundary's ID, current title, and position. Do not require timeline seconds for these segment-boundary placements.
+1. Develop and review approved speech on the narration spine; use `sequence_manifest.json` for the complete video story order and planned durations.
+2. Select a whole-video visual take and a stable-ID sequence unit within it. Add a visual request for that unit. It may be a custom brief without library use, or attach one or more library entries with a note for each about what to reuse, adapt, or avoid. Alternative whole-video takes remain separate; repeated requests inside one take are successive attempts for that unit, not new takes.
+3. Use a separate Codex session in a terminal to read the request JSON from the project. Codex creates or updates the unit's project-owned element/animation/export files and can record status and project-relative paths in `result.json`. VPS reads and displays that JSON after refresh. New requests create new IDs and preserve previous attempts/results. VPS does not need a Codex server or launch Codex.
+4. Compare completed candidates and their optional SFX plans for a sequence unit, then select the candidate to use in that take. Keep other attempts available. The selected whole-video take can retain a chosen candidate for each unit.
+5. Create `audio/music/manifest.json` from the Music tab. The user or terminal Codex adds items with start/end IDs from `sequence_manifest.json`; the existing field names remain `start_segment_id` and `end_segment_id`. VPS reloads the manifest and displays each boundary's ID, current title, and position. Do not require timeline seconds for these sequence-boundary placements.
 6. Locate/review assets separately (using Asset Finder when appropriate), record project-local references and source information, and prepare segment visual exports and edit notes for handoff.
 7. Assemble and mix the prepared assets in the chosen NLE. LOW is an optional fast preview; HIGH is the required final render. VPS does not perform this final assembly or render.
 
 ## Data ownership and storage
 
-The table below describes the implemented prototype. The target ownership model is listed separately so the current JSON files are not mistaken for the final design.
+The tables below describe the implemented ownership and handoff model. The sequence-manifest contract and migration details are maintained in the linked PSM-001 task order.
 
 | Layer | Source of truth | Current behavior |
 |---|---|---|
 | Script text + narration audio | Project `audio/narration_manifest.json` and its selected take files | Existing behavior; no duplicate script/audio JSON |
-| Visual | Multiple project `visual_layer/<take-id>.json` manifests, `visual_layer/selected_take.json`, and the project files they reference | Each manifest is one selectable whole-spine take, with creative direction and a stable-ID segment map pointing to its element/animation implementation; selection state identifies the current take |
-| Music | Project `audio/music/manifest.json` | Project-wide list of items with stable-ID start/end segment anchors; no search, playback, mixing, or rendering |
+| Video story order | Project-root `sequence_manifest.json` | Ordered narration-linked and visual-only units, stable IDs, and planned durations |
+| Visual | Multiple project `visual_layer/<take-id>.json` manifests, `visual_layer/selected_take.json`, and the project files they reference | Each manifest is one selectable whole-video take, with creative direction and a stable-ID map keyed by sequence unit; selection state identifies the current take |
+| Music | Project `audio/music/manifest.json` | Project-wide list of items with sequence-unit start/end anchors; field names remain `start_segment_id`/`end_segment_id`; no search, playback, mixing, or rendering |
 | SFX | Optional `sfx.json` inside a visual request folder | Candidate-specific data; no search, playback, mixing, or rendering |
 
-### Target ownership and handoff
+### Ownership and handoff
 
-| Layer | Target source of truth | Intended responsibility |
+| Layer | Source of truth | Responsibility |
 |---|---|---|
-| Script and narration | Project narration manifest and its selected take files | Owns stable segment IDs, spoken text, narration takes, and selected narration. |
-| Visual and SFX | Whole-spine visual take manifest, per-segment request/result records, and project files/assets referenced by each request | Each take records overall direction and stable-ID segment slots. Each slot can retain multiple requests/results and a selected completed candidate. Optional SFX planning/assets are attached to the matching request/candidate inside Visual Layer, so choosing a candidate also identifies its associated SFX. The selected candidate's renderer-produced export supplies that segment's visual asset for NLE use. |
-| Music | One project-wide music manifest | Each item references a selected asset and start/end stable segment IDs; start/end boundaries mean the beginning of the start segment and the end of the end segment. |
+| Script and narration | Project narration manifest and its selected take files | Owns stable narration IDs, spoken text, narration takes, and selected narration. |
+| Story sequence | Project-root `sequence_manifest.json` | Orders narration-linked and visual-only units and stores their planned durations. |
+| Visual and SFX | Whole-video visual take manifest, per-unit request/result records, and project files/assets referenced by each request | Each take records overall direction and stable-ID sequence-unit entries. Each entry can retain multiple requests/results and a selected completed candidate. Optional SFX planning/assets are attached to the matching request/candidate inside Visual Layer. The selected candidate's renderer-produced export supplies that unit's visual asset for NLE use. |
+| Music | One project-wide music manifest | Each item references a selected asset and start/end sequence-unit IDs; boundaries mean the beginning of the start unit and the end of the end unit. |
 | Asset provenance | Receipts stored with project assets | Records source and usage information for review; does not itself grant rights. |
 | Final video | Chosen NLE project and final export | The NLE assembles, mixes, and renders. VPS prepares assets and handoff information only. |
 
 ### Example video-project folder tree
 
-The example video project is `effectcraft-introduction-01`. The tree starts at that project root, regardless of its private machine-specific parent path. The take manifests sit directly inside `visual_layer/`; each take/segment request gets a separate folder for its brief and result. The UI creates `request.json` and `result.json`; terminal Codex can place implementation and segment-export files beside them.
+The example video project is `effectcraft-introduction-01`. The tree starts at that project root, regardless of its private machine-specific parent path; the root also contains `sequence_manifest.json`, which owns story order and planned durations. The take manifests sit directly inside `visual_layer/`; each take/unit request gets a separate folder for its brief and result. The UI creates `request.json` and `result.json`; terminal Codex can place implementation and unit-export files beside them.
 
 ```text
 effectcraft-introduction-01/
+|-- sequence_manifest.json                 # canonical video order + planned duration per unit
 ├── audio/
 │   ├── narration_manifest.json
 │   └── music/
 │       └── manifest.json                 # project-wide items with stable-ID ranges
 └── visual_layer/
     ├── selected_take.json                 # points to the chosen take manifest
-    ├── v_layer_1.json                     # whole-spine direction + stable-ID segment index
+    ├── v_layer_1.json                     # whole-video direction + stable-ID sequence-unit index
     ├── v_layer_1/
     │   └── segments/
     │       └── found-effectcraft/          # stable narration segment ID
@@ -123,7 +127,7 @@ effectcraft-introduction-01/
     │               └── VIS-002/            # another independent attempt
     │                   ├── request.json
     │                   └── result.json
-    └── v_layer_2.json                     # alternate whole-spine take (same folder pattern)
+    └── v_layer_2.json                     # alternate whole-video take (same folder pattern)
 ```
 
 The Music manifest is a small data file, for example:
@@ -137,7 +141,7 @@ The Music manifest is a small data file, for example:
       "id": "MUS-001",
       "title": "Opening bed",
       "asset_path": "assets/audio/music/opening-bed.wav",
-      "start_segment_id": "found-effectcraft",
+      "start_segment_id": "opening-card",
       "end_segment_id": "free-motion-graphics",
       "notes": "Choose a restrained instrumental bed."
     }
@@ -145,33 +149,33 @@ The Music manifest is a small data file, for example:
 }
 ```
 
-`asset_path` and `notes` can be omitted while the choice is still being explored. Segment titles are intentionally not duplicated in this file: VPS resolves the current title from each stable ID in `audio/narration_manifest.json` and shows both together.
+`asset_path` and `notes` can be omitted while the choice is still being explored. Boundary titles are intentionally not duplicated in this file: VPS resolves each ID's current title and position from `sequence_manifest.json`. The existing `start_segment_id` and `end_segment_id` field names are retained even when an ID refers to a visual-only unit.
 
-The filenames above are illustrative. `selected_take.json` stores the selected manifest filename; it is selection state, not another take. Each request is an independent attempt for one stable narration ID. The workbench creates take/request/result scaffolds and optional SFX JSON; terminal Codex creates project-owned implementation and export files and records their project-relative paths in `result.json`. Every referenced output must already exist and stay inside that specific request folder; this keeps candidate outputs isolated and lets VPS validate them without following paths into other project areas. VPS never runs the renderer.
+The filenames above are illustrative. `selected_take.json` stores the selected manifest filename; it is selection state, not another take. Each request is an independent attempt for one stable sequence-unit ID. The workbench creates take/request/result scaffolds and optional SFX JSON; terminal Codex creates project-owned implementation and export files and records their project-relative paths in `result.json`. Every referenced output must already exist and stay inside that specific request folder; this keeps candidate outputs isolated and lets VPS validate them without following paths into other project areas. VPS never runs the renderer.
 
-### Target project layout (conceptual)
+### Example project layout (conceptual)
 
-This shows the project-wide music manifest and visual-take/segment relationship for SFX and repeatable visual requests. Request IDs and filenames are illustrative. Each request keeps its brief and result distinct; VPS creates a `result.json` scaffold with `requested` status, and external Codex updates that record with progress and project-relative output paths. The take manifest points to the selected completed request for each segment, so candidate exports need not be duplicated into a second take-level folder. The NLE's native project and final render are outside VPS's asset-preparation folders.
+This shows the project-wide sequence and music manifests plus the visual-take/unit relationship for SFX and repeatable visual requests. Request IDs and filenames are illustrative. Each request keeps its brief and result distinct; VPS creates a `result.json` scaffold with `requested` status, and external Codex updates that record with progress and project-relative output paths. The take manifest points to the selected completed request for each sequence unit, so candidate exports need not be duplicated into a second take-level folder. The NLE's native project and final render are outside VPS's asset-preparation folders.
 
 ```text
 effectcraft-introduction-01/
 ├── audio/
 │   ├── narration_manifest.json
 │   └── music/
-│       └── manifest.json                 # project-wide items with start/end segment IDs
+│       └── manifest.json                 # project-wide items with start/end sequence-unit IDs
 ├── visual_layer/
 │   ├── selected_take.json
-│   ├── v_layer_1.json                     # whole-spine direction + selected request per stable segment ID
+│   ├── v_layer_1.json                     # whole-video direction + selected request per sequence-unit ID
 │   └── v_layer_1/
 │       ├── segments/
-│       │   └── <stable-segment-id>/
+│       │   └── <sequence-unit-id>/
 │       │       └── requests/
 │       │           ├── VIS-001/
 │       │           │   ├── request.json    # brief + optional library references and notes
 │       │           │   ├── result.json     # status + completed output references
 │       │           │   ├── sfx.json        # optional SFX plan for this visual candidate
 │       │           │   ├── implementation/ # project-owned element/animation source
-│       │           │   └── exports/        # this request's segment asset/preview
+│       │           │   └── exports/        # this request's sequence-unit asset/preview
 │       │           └── VIS-002/             # another attempt; does not overwrite VIS-001
 └── assets/
     └── audio/
@@ -179,11 +183,11 @@ effectcraft-introduction-01/
         └── sfx/                           # selected SFX assets and source records
 ```
 
-The conceptual `assets/audio/` folders show one possible location for selected media; VPS does not provision those folders. VPS does create and validate `audio/music/manifest.json`. SFX belongs to the visual request/candidate for its take and segment; detailed cue timing, trim/fade, and asset acquisition remain deferred, while its optional project-local `sfx.json` is scoped to that request.
+The conceptual `assets/audio/` folders show one possible location for selected media; VPS does not provision those folders. VPS does create and validate `audio/music/manifest.json`. SFX belongs to the visual request/candidate for its take and sequence unit; detailed cue timing, trim/fade, and asset acquisition remain deferred, while its optional project-local `sfx.json` is scoped to that request.
 
 ### Take manifest contract and legacy fields
 
-The `visual_layer/<take-id>.json` file defines one whole-spine take: schema version, stable take ID, display title, overall creative direction, and a `segments` object keyed by narration IDs. Newly created takes scaffold all current narration IDs as pending. New visual work is recorded in per-segment request folders and selected-request fields. For compatibility, the schema still accepts older direct intent/renderer/implementation/library fields; these are not required for new requests and the simplified UI does not depend on them.
+The `visual_layer/<take-id>.json` file defines one whole-video take: schema version, stable take ID, display title, overall creative direction, and a `segments` object keyed by sequence-unit IDs. The `segments` property name and `segments/<unit-id>/` folder are retained for compatibility; entries can represent narration-linked or visual-only units. Newly created takes scaffold every current sequence-unit ID. New visual work is recorded in per-unit request folders and selected-request fields. For compatibility, the schema still accepts older direct intent/renderer/implementation/library fields; these are not required for new requests and the simplified UI does not depend on them.
 
 For illustration, `visual_layer/v_layer_1.json` could contain. The all-zero SHA-256 values below are format placeholders and must be replaced with the actual approved-text hashes. The legacy `implementation` examples show how older take manifests may look; current requests store implementation paths in their separate `result.json`:
 
@@ -192,7 +196,7 @@ For illustration, `visual_layer/v_layer_1.json` could contain. The all-zero SHA-
   "schema_version": 1,
   "take_id": "v_layer_1",
   "title": "Retro take",
-  "creative_direction": "Retro typography and bold color across the narration spine.",
+  "creative_direction": "Retro typography and bold color across the story sequence.",
   "segments": {
     "found-effectcraft": {
       "visual_intent": "Reveal the product name like a vintage title card.",
@@ -218,41 +222,41 @@ For illustration, `visual_layer/v_layer_1.json` could contain. The all-zero SHA-
 }
 ```
 
-The JSON shows two entries for brevity. `v_layer_2.json` has its own title, direction, and `segments` map. Selecting it switches the video-wide visual take. The workbench stores that choice in `visual_layer/selected_take.json`. It validates manifest and request result paths but does not invoke renderer code; renderer-specific entry conventions and invocation remain deferred.
+The JSON shows two narration-linked entries for brevity. A visual-only entry uses `source_unit_sha256` instead of `source_text_sha256`; its hash is derived from the unit's title, note, and planned duration. Visual-only result records use schema version 3; narration-linked results retain version 2. See the [visual-only result schema](../../tools/audio_narration_generator/visual_result_visual_only.schema.json). `v_layer_2.json` has its own title, direction, and `segments` map. Selecting it switches the video-wide visual take. The workbench stores that choice in `visual_layer/selected_take.json`. It validates manifest and request result paths but does not invoke renderer code; renderer-specific entry conventions and invocation remain deferred.
 
 All paths inside a manifest are relative to the video project and must remain inside it. Keep renderer code/data in project files rather than embedding whole programs in JSON. Do not copy external tool installations or absolute machine paths into the project. Narration text remains owned by the Script and Narration Layer; a visual take can describe a different visual treatment of a segment without silently changing its spoken words.
 
 ### Target visual request and library-reference contract
 
-Keep the whole-spine take as the top-level visual alternative. Within the selected take, each stable narration segment can have zero or more distinct visual requests. A request is one attempt to create or revise that segment's visual asset; it is not a separate take and must not alter earlier requests or completed outputs. Give each request a unique, non-overwriting ID within its take/segment.
+Keep the whole-video take as the top-level visual alternative. Within the selected take, each stable sequence unit can have zero or more distinct visual requests. A request is one attempt to create or revise that unit's visual asset; it is not a separate take and must not alter earlier requests or completed outputs. Give each request a unique, non-overwriting ID within its take/unit.
 
-The take manifest keeps a `selected_request_id` (or equivalent explicit selection) for each segment when the user chooses a completed candidate. A missing selection is valid while work is pending. Selecting a request for one segment must not change the selected take or another segment's candidate.
+The take manifest keeps a `selected_request_id` (or equivalent explicit selection) for each sequence unit when the user chooses a completed candidate. A missing selection is valid while work is pending. Selecting a request for one unit must not change the selected take or another unit's candidate.
 
-Each request records its stable take ID and segment ID, the user's free-text visual brief, optional context, an optional renderer preference, and zero or more library references. No library reference is required: a brief such as “retro text-only reveal” is sufficient for Codex to create new project-specific elements and animation. When an entry is attached, record its library category and stable entry ID plus a user-authored note for that particular reference. This supports several inspirations (for example, an element and an animation) in one request. Do not store machine-specific absolute paths or assume referenced library files are copied into the video project.
+Each request records its stable take ID and sequence-unit ID, the user's free-text visual brief, optional context, an optional renderer preference, and zero or more library references. Narration-linked requests use their approved source text; visual-only requests use the unit title, note, and planned duration as source context. No library reference is required: a brief such as “retro text-only reveal” is sufficient for Codex to create new project-specific elements and animation. When an entry is attached, record its library category and stable entry ID plus a user-authored note for that particular reference. This supports several inspirations (for example, an element and an animation) in one request. Do not store machine-specific absolute paths or assume referenced library files are copied into the video project.
 
-The Visual Library Browser should be available inside Visual Layer while a take and segment are selected. It should search/filter public and configured private references, elements, and animations; show entry details and available previews; and let the user attach an entry with a note without leaving the selected segment context. Attachment updates only the current/new request for the selected take and segment. The browser remains read-only with respect to library entries. Referenced library code is never executed by VPS. If a reference later becomes unavailable, report that state without deleting the stored reference or request.
+The Visual Library Browser is available inside Visual Layer while a take and sequence unit are selected. It searches/filters public and configured private references, elements, and animations; shows entry details and available previews; and lets the user attach an entry with a note without leaving the selected unit context. Attachment updates only the current/new request for the selected take and unit. The browser remains read-only with respect to library entries. Referenced library code is never executed by VPS. If a reference later becomes unavailable, report that state without deleting the stored reference or request.
 
-An optional SFX section belongs alongside each request/candidate in Visual Layer, not in a separate top-level tab. Its cue/assets are associated with that exact take, segment, and visual request. Selecting a different completed visual candidate selects its corresponding SFX plan too; a candidate without SFX is valid. Keep exact cue timing, trim/fade, and asset acquisition details within the separately scoped audio design work.
+An optional SFX section belongs alongside each request/candidate in Visual Layer, not in a separate top-level tab. Its cue/assets are associated with that exact take, sequence unit, and visual request. Selecting a different completed visual candidate selects its corresponding SFX plan too; a candidate without SFX is valid. Keep exact cue timing, trim/fade, and asset acquisition details within the separately scoped audio design work.
 
-VPS creates each request JSON and a separate result JSON scaffold. The user runs Codex independently in a terminal; that session reads the request and writes project-owned implementation files and a segment export. New result records use schema version 2 and bind `take_id`, `segment_id`, `request_id`, and `source_text_sha256` to the request; they record status, provider, update/completion timestamps, an error when failed, and project-relative implementation, optional preview, and exported segment paths. A completed result must reference an existing export file inside its request folder, and its source hash must still match the narration before selection. Keep the user's brief/reference notes intact after handoff; a materially different follow-up brief creates a new request ID. VPS validates the result and displays status/errors/paths after refresh. Existing version-1 result records remain readable as legacy when their request ID and paths validate. VPS does not host a Codex service, launch Codex for visual work, run renderer code, or create/execute the animation itself. See the [visual result contract](../../tools/audio_narration_generator/visual_result.schema.json) and [workbench guide](../../tools/audio_narration_generator/README.md#whole-spine-visual-takes).
+VPS creates each request JSON and a separate result JSON scaffold. The user runs Codex independently in a terminal; that session reads the request and writes project-owned implementation files and a unit export. Narration-linked results use schema version 2 with `source_text_sha256`; visual-only results use schema version 3 with `source_unit_sha256`. Both bind the take, unit, and request IDs, record status/timestamps/errors as applicable, and use project-relative implementation, optional preview, and exported-unit paths. A completed result must reference an existing export inside its request folder, and its source hash must still match before selection. Keep the user's brief/reference notes intact after handoff; a materially different follow-up brief creates a new request ID. VPS validates the result and displays status/errors/paths after refresh. VPS does not host a Codex service, launch Codex for visual work, or run renderer code. See the [narration-linked result contract](../../tools/audio_narration_generator/visual_result.schema.json), [visual-only result contract](../../tools/audio_narration_generator/visual_result_visual_only.schema.json), and [workbench guide](../../tools/audio_narration_generator/README.md#whole-spine-visual-takes).
 
-Project-wide Music uses [`music_manifest.schema.json`](../../tools/audio_narration_generator/music_manifest.schema.json). It contains up to 500 items with a stable item ID, title, optional project-relative `asset_path` and notes, and required `start_segment_id`/`end_segment_id` references. VPS validates that both IDs exist and that the end is not earlier than the start in the current narration order; displayed titles and positions come from the narration manifest. Start means the beginning of the start segment; end means the end of the end segment. The older per-segment [`music_mapping.schema.json`](../../tools/audio_narration_generator/music_mapping.schema.json) remains for existing files only. Optional candidate SFX is stored with a visual request and uses its own contract. Validation does not verify file existence, licensing, or asset availability. Asset Finder provenance remains separate; a receipt is not proof of usage rights. Never put machine-specific absolute paths or media files in this public repository.
+Project-wide Music uses [`music_manifest.schema.json`](../../tools/audio_narration_generator/music_manifest.schema.json). It contains up to 500 items with a stable item ID, title, optional project-relative `asset_path` and notes, and required `start_segment_id`/`end_segment_id` references. Those existing field names resolve to IDs in `sequence_manifest.json`. VPS validates that both IDs exist and that the end is not earlier than the start in story order; displayed titles and positions come from the sequence units. Start means the beginning of the start unit; end means the end of the end unit, including visual-only units. The older per-segment [`music_mapping.schema.json`](../../tools/audio_narration_generator/music_mapping.schema.json) remains for existing files only. Optional candidate SFX is stored with a visual request and uses its own contract. Validation does not verify file existence, licensing, or asset availability. Asset Finder provenance remains separate; a receipt is not proof of usage rights. Never put machine-specific absolute paths or media files in this public repository.
 
-The former per-segment visual plans are documented in [Visual Animation Plans Per Segment](TASK-ORDER_VISUAL_ANIMATION_PER_SEGMENT.md). The current workbench no longer exposes their create/open/status workflow. Existing `audio/visuals/<segment-id>.json` files remain untouched; there is no importer. The take manifests and request JSON are canonical for new whole-spine work.
+The former per-segment visual plans are documented in [Visual Animation Plans Per Segment](TASK-ORDER_VISUAL_ANIMATION_PER_SEGMENT.md). The current workbench no longer exposes their create/open/status workflow. Existing `audio/visuals/<segment-id>.json` files remain untouched; there is no importer. The take manifests and request JSON are canonical for new whole-video work.
 
-The workbench creates/selects visual take manifests and creates/opens per-segment request, result, and candidate SFX JSON. Take creation scaffolds every current narration ID, selects the new take, and does not overwrite collisions. Music has a project-wide JSON manifest and displays stable-ID ranges; it does not automatically mix into the narration review track, trigger asset search/download, or claim a final video mix exists. The interface must not claim that a visual brief has already been rendered. Later audio composition must define overlap, fades, loudness, and how cue positions respond to narration-length changes before any composition/rendering feature is added.
+The workbench creates/selects visual take manifests and creates/opens per-unit request, result, and candidate SFX JSON. Take creation indexes every current sequence-unit ID, selects the new take, and does not overwrite collisions. Music has a project-wide JSON manifest and displays sequence-unit ranges; it does not automatically mix into the narration review track, trigger asset search/download, or claim a final video mix exists. The interface must not claim that a visual brief has already been rendered. Exact audio composition semantics remain deferred.
 
 ## Workbench layout requirements
 
-The requirements below describe the implemented prototype unless explicitly marked as target behavior. The target tab hierarchy is three top-level layers, with SFX nested under Visual Layer.
+The requirements below describe the implemented workbench: three top-level layers, with SFX nested under Visual Layer.
 
 - Keep the top bar for global context and narration transport. **Visual Layer** lists take manifests in project `visual_layer/` and excludes `selected_take.json` from the chooser. Do not restore per-beat controls to the header.
-- Add a clearly labeled layer workspace for the selected beat. The top-level tabs and their nesting are specified in the [Workbench Layer Tabs task order](TASK-ORDER_WORKBENCH_LAYER_TABS.md). Preserve the always-visible beat list and a readable script editor at desktop sizes.
-- Show the selected take and selected segment's stable ID/title. Present request status and result paths in the request history; distinguish creating a whole-spine take from adding a request for the selected segment.
+- Keep the current three top-level work areas: Script and Narration, Visual, and Music. Scratchpad and F5-TTS are nested under Script and Narration; SFX is nested under Visual. The older [Workbench Layer Tabs task order](TASK-ORDER_WORKBENCH_LAYER_TABS.md) records the initial four-tab design and is historical. Preserve the always-visible Sequence rail and a readable script editor at desktop sizes.
+- Show the selected take and sequence unit's stable ID/title. Present request status and result paths in the request history; distinguish creating a whole-video take from adding a request for the selected unit.
 - Place optional candidate-specific SFX JSON inside the corresponding visual request. Do not expose SoundEffects as a top-level tab.
-- Show the selected stable segment ID in shared context across Script and Narration, Visual, and Music. Project-wide Music items show both start/end IDs and titles.
-- Project-wide Music items use segment-boundary start/end anchors rather than unrelated per-segment cue files.
-- Show the selected take/segment's repeatable visual request history. Allow a custom text brief without library use, optional library entries with a note per entry, and selection among completed candidates without deleting other attempts.
+- Show the selected sequence-unit ID in shared context across Script and Narration, Visual, and Music. Project-wide Music items show both start/end IDs and titles.
+- Project-wide Music items use sequence-unit boundary start/end anchors rather than unrelated per-segment cue files. Existing property names remain `start_segment_id` and `end_segment_id`.
+- Show the selected take/unit's repeatable visual request history. Allow a custom text brief without library use, optional library entries with a note per entry, and selection among completed candidates without deleting other attempts.
 - Keep the Visual Library Browser read-only and collapsible inside the request form; attaching a reference preserves the selected take/segment context and does not copy or execute library content.
 - Save a request JSON and separate result JSON for terminal Codex. Refresh and display results, but do not host a Visual Layer Codex service, launch Codex, or execute renderer code from VPS.
 - On narrower windows, collapse or stack secondary panels instead of shrinking the editor or forcing the top bar into a single crowded line. Keyboard navigation, focus visibility, labels, and status announcements must remain usable.
@@ -260,25 +264,26 @@ The requirements below describe the implemented prototype unless explicitly mark
 
 ## Implementation phases
 
-1. **Completed — contracts:** finalized take-selection and take schemas, the project-wide Music schema, and candidate SFX contracts. Defined draft/completion and stale-text statuses, renderer values, segment-boundary Music ranges, 1 MB file limits, project-relative paths, and non-overwrite behavior. Old plan files are not imported or changed.
-2. **Completed — project APIs:** added project-confined create/list/select/open/status operations, stable-ID mapping, atomic non-overwriting file creation, current narration hash checks, path/symlink validation, and focused visual-take/mapping modules.
-3. **Completed — workbench integration:** connected the Visual Layer chooser and selected-segment view; added project Music JSON create/open/display and candidate-specific SFX actions. JSON editing opens in the default app. Existing script, playback, Scratchpad, and F5-TTS workflows remain. The shared narration context is visible across all layer tabs. The previous visual-plan and standalone SFX panels are removed from the new interface. Renderer code and audio media are never executed or played.
+1. **Completed — contracts:** finalized take-selection and take schemas, the project-wide Music schema, and candidate SFX contracts. Defined draft/completion and stale-source statuses, renderer values, sequence-unit boundary Music ranges, 1 MB file limits, project-relative paths, and non-overwrite behavior. Old plan files are not imported or changed.
+2. **Completed — project APIs:** added project-confined create/list/select/open/status operations, stable-ID mapping, atomic non-overwriting file creation, narration-text and visual-only source revision checks, path/symlink validation, and focused visual-take/mapping modules.
+3. **Completed — workbench integration:** connected the Visual Layer chooser and selected-unit view; added project Music JSON create/open/display and candidate-specific SFX actions. JSON editing opens in the default app. Existing script, playback, Scratchpad, and F5-TTS workflows remain. The shared sequence-unit context is visible across all layer tabs. The previous visual-plan and standalone SFX panels are removed from the new interface. Renderer code and audio media are never executed or played.
 4. **Completed — tests/docs:** added regression tests for take switching/isolation, reordering/new IDs, stale text, route confinement, unsafe/malformed mappings, and concurrent create collisions. Updated this task order and the narration workbench guide. Layer navigation retains its keyboard model; the new content stacks responsively.
 5. **Completed — file-based visual handoff:** create request/result JSON under each take/segment/request folder. A separate terminal Codex session reads the request, creates project-owned outputs, and can update progress and project-relative paths in the result JSON. The workbench reads the result on refresh; no Codex service or auto-launch is required.
 6. **Completed — library browser integration:** expose the read-only catalog inside Visual Layer, including Public/Private and References/Elements/Animations browsing, detail/preview, attach-reference, and per-reference note workflows. Keep private roots in local configuration and store only catalog identity in project files.
-7. **Deferred — composition:** synchronized preview, Asset Finder integration, and final audio/video assembly remain future work after cue composition semantics and renderer contracts are specified.
+7. **Deferred — composition and sourcing automation:** synchronized visual preview, automatic Asset Finder handoff, and final audio/video assembly remain future work. Asset Finder can still be used separately; exact audio composition behavior belongs to the chosen NLE.
+8. **Completed — story sequence support:** added project-root `sequence_manifest.json`, visual-only units, planned durations, explicit narration-order reconciliation, visual-only request/result contracts, and music anchors against all sequence-unit IDs. See [PSM-001](TASK-ORDER_PROJECT_SEQUENCE_MANIFEST.md).
 
 ## Implemented follow-up scope: target layer model
 
 Steps 1–9 below are implemented. Audio/video assembly, NLE integration, asset sourcing automation, and final rendering remain outside this layer task:
 
 1. Update navigation to the three target top-level tabs: Script and Narration Layer, Visual Layer, and Music Layer; nest SFX within Visual Layer.
-2. Keep the optional SFX section inside each visual request/candidate in Visual Layer. SFX follows the selected take, stable segment ID, and selected visual candidate; different candidates or takes may have different SFX, and no candidate is required to have SFX.
-3. Add repeatable visual requests under each take/segment. Keep every request and completed result distinct; support custom briefs with no library and optional attached library references with per-reference notes. Let the user compare completed outputs and select one candidate for that segment without converting it into a new whole-spine take.
+2. Keep the optional SFX section inside each visual request/candidate in Visual Layer. SFX follows the selected take, sequence-unit ID, and selected visual candidate; different candidates or takes may have different SFX, and no candidate is required to have SFX.
+3. Add repeatable visual requests under each take/unit. Keep every request and completed result distinct; support custom briefs with no library and optional attached library references with per-reference notes. Let the user compare completed outputs and select one candidate for that unit without converting it into a new whole-video take.
 4. Integrate the read-only Visual Library Browser into Visual Layer so the user can search, inspect, preview, attach, and annotate library entries in the selected request. Do not copy/execute library content or expose private paths.
 5. Keep the visual handoff file-based: VPS creates the request JSON; the user's terminal Codex reads it and may update the separate result JSON; VPS reads the result after refresh. Do not add a Codex service, auto-launch Codex, or execute renderers.
-6. Replace per-segment music planning with one project-wide manifest whose items may reference an asset and have start/end segment IDs. Start means the beginning of the selected start segment; end means the end of the selected end segment. Do not require timeline seconds for these anchors.
-7. Display stable narration IDs clearly in shared selected-segment context across Script and Narration, Visual, and Music; show start/end IDs as well as current titles in each Music item.
+6. Replace per-segment music planning with one project-wide manifest whose items may reference an asset and have start/end sequence-unit IDs. The stored property names remain `start_segment_id`/`end_segment_id`. Start means the beginning of the selected start unit; end means the end of the selected end unit. Do not require timeline seconds for these anchors.
+7. Display stable sequence-unit IDs clearly in shared context across Script and Narration, Visual, and Music; show start/end IDs as well as current titles in each Music item.
 8. Keep VPS limited to brainstorming, asset references, and preparation/handoff. Do not add NLE integration, timeline assembly, audio mixing, or final video rendering as part of these layer changes.
 9. Add tests for request isolation/history, library reference and note persistence, result path/status validation, candidate selection, take-specific SFX, project-wide music boundaries, stable-ID visibility/persistence, and absence of playback/mixing/rendering side effects. Keep existing project data safe; any migration must be explicit, non-destructive, and separately reviewed.
 
@@ -288,29 +293,29 @@ The specific NLE remains undecided. DaVinci Resolve and Artcraft are candidates 
 
 The checks below record acceptance of the implemented layer workflow. NLE composition and rendering are explicitly outside this scope.
 
-- Script/narration and visual work are anchored to the selected beat. Music is project-wide rather than a selected-beat layer. Missing optional layer entries/files are not an error.
-- The video project contains `visual_layer/` with whole-spine take manifests, a `selected_take.json` pointer, and per-take/per-segment request folders. Each take defines whole-spine direction and indexes stable segment IDs; request result JSON points to project-specific element/animation and export files.
-- Selecting a manifest selects that take across the narration spine. Selection persists, switching takes preserves both manifests/files, and editing one take does not silently change another. New requests and result files are scoped to a take and stable segment ID.
-- Each take maps the exact stable segment IDs in `audio/narration_manifest.json`. Reordering beats preserves associations; newly added beats appear as pending in existing takes until addressed. A complete take accounts for every active narration segment.
+- Script/narration editing and playback operate on narration-linked units. Visual requests can target narration-linked or visual-only units. Music is project-wide rather than a selected-unit cue layer. Missing optional layer entries/files are not an error.
+- The video project contains `sequence_manifest.json` and `visual_layer/` with whole-video take manifests, a `selected_take.json` pointer, and per-take/per-unit request folders. Each take defines whole-video direction and indexes stable sequence-unit IDs; request result JSON points to project-specific element/animation and export files.
+- Selecting a manifest selects that take across the video sequence. Selection persists, switching takes preserves both manifests/files, and editing one take does not silently change another. New requests and result files are scoped to a take and stable sequence-unit ID.
+- Each take can index all IDs in `sequence_manifest.json`, including visual-only units. Reordering units preserves associations; unlinked narration additions remain visible for explicit linking. Take readiness is calculated against active sequence units.
 - Each request may specify a renderer preference or leave that choice to terminal Codex. Library references are optional. The brief and references live in `request.json`; terminal Codex records implementation and export paths in `result.json`.
 - The current Visual Layer does not expose the older `audio/visuals/<segment-id>.json` plan workflow. Existing files remain untouched; no migration overwrites or deletes them.
 - Music JSON follows the project-wide manifest schema; each item's range shows stable start/end IDs and current titles. Candidate SFX JSON is stored beside its visual request. New layer actions do not overwrite existing project JSON or change narration text.
-- Reordering beats preserves segment identities. Music ranges keep their stable IDs and display updated positions/titles; ranges whose end moves before their start are reported invalid for review. Editing spoken text does not rewrite music items or the visual take.
-- The selected narration title/position and stable ID remain visible in the shared context strip across every top-level layer tab.
-- Existing script editing, SAPI/F5-TTS playback, Scratchpad, and take review remain usable after the layout change. Simplified Visual Layer presents take selection, stable segment identity, request history, optional library references, result paths, and candidate SFX JSON. It does not expose predecessor visual-plan or standalone SFX panels; existing files remain untouched.
-- The desktop top bar has no per-beat layer creation controls; the selected-beat workspace remains usable at narrow widths with keyboard and screen-reader labels.
+- Reordering sequence units preserves IDs. Music ranges keep their stable IDs and display updated positions/titles; ranges whose end moves before their start are reported invalid for review. Editing spoken text does not rewrite music items or the visual take.
+- The selected sequence-unit title/position and stable ID remain visible in the shared context strip across every top-level layer tab.
+- Existing script editing, SAPI/F5-TTS playback, Scratchpad, and take review remain usable after the layout change. Simplified Visual Layer presents take selection, stable sequence-unit identity, request history, optional library references, result paths, and candidate SFX JSON. It does not expose predecessor visual-plan or standalone SFX panels; existing files remain untouched.
+- The desktop top bar has no per-unit layer creation controls; the selected-sequence workspace remains usable at narrow widths with keyboard and screen-reader labels.
 - Tests establish that simply selecting or editing a visual take does not execute renderer code, and that Music/SFX JSON actions do not download media, run Asset Finder, play/mix audio, or render video.
 
-## Target-design acceptance checks (status)
+## Acceptance checks and implementation status
 
 - **Implemented:** top-level tabs are Script and Narration Layer, Visual Layer, and Music Layer; optional SFX is nested within Visual Layer.
-- **Implemented:** for a selected whole-spine take and stable-ID segment, the user can create distinct requests, each with a custom brief, optional renderer preference, and optional library references/notes.
+- **Implemented:** for a selected whole-video take and stable-ID sequence unit, the user can create distinct requests, each with a custom brief, optional renderer preference, and optional library references/notes.
 - **Implemented:** each request has a stable ID and separate request/result records. New requests preserve earlier briefs and candidate files.
 - **Implemented:** a separate terminal Codex session can read a request and update result status and project-relative paths. VPS refreshes and displays the result; Visual Layer does not launch Codex or execute renderer code.
 - **Implemented:** completed requests can be selected for a segment; other candidates remain available and the selection does not change another segment or take.
 - **Implemented:** the read-only Visual Library Browser supports public/private and reference/element/animation browsing, and attaches catalog identity plus a note to a request without copying or executing library code.
-- **Implemented:** the shared context strip keeps the selected narration title and stable ID visible across every top-level layer view. The segment list also displays each stable ID.
-- **Implemented:** Music is project-wide in `audio/music/manifest.json`; each item range shows the start and end segment titles and stable IDs, resolved against the current narration order.
+- **Implemented:** the shared context strip keeps the selected sequence-unit title and stable ID visible across every top-level layer view. The Sequence rail also displays each stable ID.
+- **Implemented:** Music is project-wide in `audio/music/manifest.json`; each item range shows start/end sequence-unit titles and stable IDs, resolved against story order. Existing music field names are retained.
 - **Implemented:** optional SFX JSON is scoped to a request/candidate within its take and segment.
 - **Implemented boundary:** selected request results may point to a segment export from EffectCraft, Manim, or GSAP. VPS does not execute renderers or assemble the final video.
 - **Implemented boundary:** VPS remains a brainstorming and asset-preparation workspace. A separately chosen NLE owns timeline assembly, mixing, and final rendering. LOW is optional; reviewed HIGH is the required final product.

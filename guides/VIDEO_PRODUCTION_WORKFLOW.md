@@ -1,6 +1,6 @@
 # Video Production System Workflow
 
-This guide describes a practical VPS workflow from a rough narration idea through a reviewed video. VPS starts with the narration spine: stable segments hold the spoken words and connect them to visual, music, and sound-effects work. You can stop after any stage and resume later.
+This guide describes a practical VPS workflow from a rough narration idea through a reviewed video. Stable narration segments hold the approved spoken words; the project sequence orders those narration units together with any visual-only openings, pauses, montages, or outros. You can stop after any stage and resume later.
 
 Starting from a fresh VPS clone and creating a separate project with Codex? Begin with [Start a Video Project with Codex](START_A_VIDEO_PROJECT_WITH_CODEX.md). The public VPS checkout is the tool and instruction source; keep the actual video project in its own folder.
 
@@ -63,22 +63,22 @@ effectcraft-introduction-01/
 |   |-- assembled/                     # combined narration review WAVs
 |   |-- performance/                   # generator run receipts
 |   |-- music/
-|   |   `-- manifest.json              # optional project-wide music items and segment ranges
+|   |   `-- manifest.json              # optional project-wide music items and sequence-unit ranges
 |   |-- visuals/                       # retained legacy per-segment visual plans; not current workflow
 |   `-- sfx/                           # retained legacy per-segment SFX plans; not current workflow
 |-- visual_layer/
-|   |-- selected_take.json             # selects one whole-spine visual direction
-|   |-- v_layer_1.json                 # take direction + stable-ID segment/request index
+|   |-- selected_take.json             # selects one whole-video visual direction
+|   |-- v_layer_1.json                 # take direction + stable sequence-unit/request index
 |   `-- v_layer_1/
 |       `-- segments/
-|           `-- <stable-segment-id>/
+|           `-- <sequence-unit-id>/
 |               `-- requests/
 |                   `-- VIS-001/       # each request is a separate visual attempt
 |                       |-- request.json # preserved brief + optional library references
 |                       |-- result.json  # status + validated output paths
 |                       |-- sfx.json     # optional SFX plan for this visual candidate
 |                       |-- implementation/ # project-owned element/animation source
-|                       `-- exports/    # preview and segment export, when created
+|                       `-- exports/    # preview and sequence-unit export, when created
 |-- assets/                            # optional project-owned media and source records
 |   `-- audio/
 |       |-- music/
@@ -95,7 +95,7 @@ This is an illustrative layout, not a list of folders VPS pre-creates. A project
 | Story sequence | `sequence_manifest.json` | Canonical video order: narration-linked and visual-only units, stable IDs, and editable planned durations. |
 | Script and narration | `audio/narration_manifest.json` and optional `audio/narration_requests/` | Stable narration IDs, speech-only playback order and approved text, voice settings, selected takes, and AI wording requests/results. |
 | Visual and candidate SFX | `visual_layer/<take-id>.json`, `visual_layer/selected_take.json`, and `visual_layer/<take-id>/segments/<unit-id>/requests/<request-id>/` | A take describes one direction across the video sequence. Each unit can keep multiple independent visual requests; implementation/export assets remain project-owned. Optional SFX planning belongs to the visual candidate it supports. |
-| Music | `audio/music/manifest.json` | One project-wide list. Each item starts at the beginning of its `start_segment_id` and ends at the end of its `end_segment_id`; optional asset paths refer to project files. |
+| Music | `audio/music/manifest.json` | One project-wide list. Each item's `start_segment_id` and `end_segment_id` values refer to sequence-unit IDs; the cue starts at the beginning of the first unit and ends after the last unit. Optional asset paths refer to project files. |
 | Project identity and direction | `video_project.json` | User- and AI-facing creative brief, rough narration outline, inspirations, and manually maintained project-status context. |
 | Final video | Chosen NLE/production-tool project and `render/HIGH/` output | The NLE or production renderer assembles, mixes, and renders; VPS prepares assets and planning handoff information rather than acting as an NLE. |
 
@@ -111,17 +111,17 @@ Visual take entries and request folders use the selected sequence-unit ID for ei
 
 ### Visual Layer: alternatives for the whole video sequence
 
-Create a visual take when you are ready to explore how the video should look. A take is one alternative direction across the whole narration spine. For example, `v_layer_1` could try a retro treatment across the video, while `v_layer_2` tries a different overall treatment. Within a take, each segment can have repeated visual requests (`VIS-001`, `VIS-002`, …), so you can explore or revise that segment without replacing earlier attempts or creating another whole-video take. The take manifest tracks segment requests and which completed candidate is selected for each segment.
+Create a visual take when you are ready to explore how the video should look. A take is one alternative direction across the whole story sequence. For example, `v_layer_1` could try a retro treatment across the video, while `v_layer_2` tries a different overall treatment. Within a take, each narration-linked or visual-only sequence unit can have repeated visual requests (`VIS-001`, `VIS-002`, …), so you can explore or revise that unit without replacing earlier attempts or creating another whole-video take. The take manifest tracks requests and which completed candidate is selected for each unit.
 
-Each take manifest combines the creative direction with an index keyed by stable narration IDs. A request can be a custom brief with no library dependency, or optionally reference items from the read-only Visual Library Browser and include a note for each. The implementation is usually created specifically for this video and may use the renderer best suited to it. The request JSON is the brief and handoff; the paired result JSON records progress and output references. The selected-take pointer is only selection state, not another take.
+Each take manifest combines the creative direction with an index keyed by stable sequence-unit IDs. A request can be a custom brief with no library dependency, or optionally reference items from the read-only Visual Library Browser and include a note for each. The implementation is usually created specifically for this video and may use the renderer best suited to it. The request JSON is the brief and handoff; the paired result JSON records progress and output references. The selected-take pointer is only selection state, not another take.
 
-In **Visual Layer**, select or create a take, select a segment by its stable ID, and add a visual request. VPS creates that request's `request.json` brief and `result.json` scaffold under the project. Use terminal Codex (or another AI assistant) to read the request, create the implementation and segment export, and update the paired result. Refresh the workbench to see its status. VPS never auto-launches Codex or executes renderer code. The Visual Library Browser is optional and read-only; it contributes references and notes to the request, not copied or executed library code. See the [Visual Layer guide](../tools/audio_narration_generator/README.md#whole-spine-visual-takes) and [Segment Layers and Workbench Layout task order](../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the full workflow.
+In **Visual Layer**, select or create a take, select a sequence unit by its stable ID, and add a visual request. VPS creates that request's `request.json` brief and `result.json` scaffold under the project. Use terminal Codex (or another AI assistant) to read the request, create the implementation and unit export, and update the paired result. Refresh the workbench to see its status. VPS never auto-launches Codex or executes renderer code. The Visual Library Browser is optional and read-only; it contributes references and notes to the request, not copied or executed library code. See the [Visual Layer guide](../tools/audio_narration_generator/README.md#whole-spine-visual-takes) and [Segment Layers and Workbench Layout task order](../docs/TASKS/TASK-ORDER_SEGMENT_LAYERS_AND_WORKBENCH_LAYOUT.md) for the full workflow.
 
-Narration-linked results retain the v2 source-text contract. Visual-only requests use `source_unit_sha256` and a v3 result; see the [visual-only result schema](../tools/audio_narration_generator/visual_result_visual_only.schema.json). In both cases keep status current (`requested`, `in_progress`, `completed`, or `failed`) and update `updated_at`; completed work also needs `completed_at` and an existing exported segment file. Output paths must be project-relative and inside that request folder. VPS validates these before allowing a candidate to be selected.
+Narration-linked results retain the v2 source-text contract. Visual-only requests use `source_unit_sha256` and a v3 result; see the [visual-only result schema](../tools/audio_narration_generator/visual_result_visual_only.schema.json). In both cases keep status current (`requested`, `in_progress`, `completed`, or `failed`) and update `updated_at`; completed work also needs `completed_at` and an existing exported sequence-unit file. Output paths must be project-relative and inside that request folder. VPS validates these before allowing a candidate to be selected.
 
 ### Project-wide music and candidate-specific sound effects
 
-Music is project-wide, not a separate cue map per segment. The **Music Layer** creates or opens `audio/music/manifest.json`. Each item names its start and end segment by stable ID: playback is intended to begin at the start of the first segment and end after the last segment. The UI resolves and displays current segment titles alongside those IDs. The manifest is simple planning/mapping data; it does not itself acquire, play, mix, or render audio. Codex can help choose music and maintain the JSON when asked.
+Music is project-wide, not a separate cue map per segment. The **Music Layer** creates or opens `audio/music/manifest.json`. Each item names its start and end sequence unit by stable ID; either boundary can be visual-only. The UI resolves and displays current unit titles alongside those IDs. The manifest is simple planning/mapping data; it does not itself acquire, play, mix, or render audio. Codex can help choose music and maintain the JSON when asked.
 
 Sound effects are optional and attached to a visual request as that candidate's `sfx.json`, keeping the effect plan beside the visual it supports. Detailed cue timing, sourcing, playback, and mixing remain outside the current workbench. When sourcing is needed, use Asset Finder separately, keep media and its neighboring `.asset.json` receipt with the project, and review outside-asset usage terms. A receipt records source metadata; it does not itself establish usage rights. See the [Asset Finder guide](../tools/asset_finder/README.md).
 
@@ -134,12 +134,12 @@ Rendering the final video is a required production stage. Keep the `render/` fol
 
 Keep tier names and filename suffixes aligned, such as `render/LOW/scene_short-description_low.mp4` and `render/HIGH/scene_short-description_high.mp4`. Follow the selected renderer's guide for quality settings and export steps. For example, the [EffectCraft Section Renderer guide](../tools/effectcraft_ffmpeg_sections/README.md) writes output to the requested tier.
 
-The VPS workbench currently organizes the narration and stores visual and audio mappings; it does not assemble renderer code, music, and SFX into a finished video. Render through the selected production tool, watch and listen to the output, and revise the project if review finds issues. The final HIGH export belongs in the project's `render/HIGH/` folder.
+The VPS workbench organizes the story sequence and narration, and stores visual, music, and candidate-SFX planning and asset references; it does not assemble them into a finished video. Render through the selected NLE or production tool, watch and listen to the output, and revise the project if review finds issues. The final HIGH export belongs in the project's `render/HIGH/` folder.
 
 ## Review checkpoints
 
 - **Narration:** Are the facts supported? Does each segment say one clear thing? Does the complete narration sound natural and have a useful pace?
-- **Visuals:** Does the selected take cover every active segment? Can each segment's implementation be located and edited in the project?
+- **Visuals:** Does the selected take cover each active sequence unit that needs a visual? Can each unit's implementation be located and edited in the project?
 - **Music and SFX:** Do the mapped assets fit the spoken moment, stay at an appropriate level, and have reviewed source information when sourced externally?
 - **Video:** Are words and graphics readable at normal size? Is the timing clear? Does the complete export play with synchronized sound and no missing media or accidental private information?
 - **Project handoff:** Are the editable manifests, code, assets, receipts, and concise review notes kept with the video project? Are generated media and renders kept out of the public VPS source repository?
