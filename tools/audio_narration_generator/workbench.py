@@ -324,6 +324,11 @@ def create_handler(project: Project, codex_path: str | None, python_path: str) -
                         body.get("reference_audio"), body.get("reference_text"),
                         self._required_string(body, "manifest_hash"),
                     ))
+                elif self.path == "/api/project-manifest/default-voice/copy-style":
+                    self._json(200, project.copy_voice_style_to_project_default(
+                        self._required_string(body, "voice_style"),
+                        self._required_string(body, "manifest_hash"),
+                    ))
                 elif self.path == "/api/visual-takes/create":
                     result = project.create_visual_take(
                         self._required_string(body, "take_id"),

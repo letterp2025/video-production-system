@@ -712,6 +712,26 @@ class HttpTest(unittest.TestCase):
         self.assertIsNone(cleared["manifest"]["narration"]["default_voice"])
         self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")
 
+    def test_copy_named_voice_style_to_project_default(self):
+        manifest = json.loads(self.manifest.read_text(encoding="utf-8"))
+        manifest["voice_styles"] = {
+            "warm": {"reference_audio": "reference_audio/warm.wav", "reference_text": "Warm exact words."}
+        }
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        self.project.ensure_project_manifest()
+        with urlopen(self.base + "/api/project-manifest") as response:
+            before = json.loads(response.read())
+        req = Request(self.base + "/api/project-manifest/default-voice/copy-style",
+                      data=json.dumps({"voice_style": "warm", "manifest_hash": before["manifest_hash"]}).encode("utf-8"),
+                      headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(req) as response:
+            copied = json.loads(response.read())
+        self.assertEqual(copied["manifest"]["narration"]["default_voice"], {
+            "reference_audio": "audio/reference_audio/warm.wav", "reference_text": "Warm exact words."
+        })
+        self.assertEqual(self.project.state_payload()["default_voice_source"], "video_project.json")
+        self.assertNotIn("Warm exact words.", json.dumps(self.project.state_payload()))
+
     def test_state_reports_effective_default_voice_source(self):
         self.assertEqual(self.project.state_payload()["default_voice_source"], "audio/narration_manifest.json")
         (self.root / "video_project.json").write_text(json.dumps({

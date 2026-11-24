@@ -743,6 +743,26 @@ function renderVoiceStyles(segment) {
     select.append(option);
   }
   select.value = segment.voice_style || "";
+  $("copy-voice-default").disabled = state.busy || !select.value;
+}
+
+async function copyVoiceStyleToProjectDefault() {
+  const style = $("voice-style").value;
+  if (!style) return toast("Choose a named voice style first.");
+  const button = $("copy-voice-default");
+  button.disabled = true;
+  try {
+    const projectManifest = await request("/api/project-manifest");
+    await request("/api/project-manifest/default-voice/copy-style", {
+      voice_style: style, manifest_hash: projectManifest.manifest_hash
+    });
+    await refreshState();
+    toast(`${style.replaceAll("_", " ")} is now the project default voice.`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = state.busy || !$("voice-style").value;
+  }
 }
 
 function renderTts(segment) {
@@ -1751,6 +1771,8 @@ function bindEvents() {
   }));
   $("visual-take-select").addEventListener("change", selectVisualTake);
   $("open-project-manifest").addEventListener("click", openProjectManifest);
+  $("copy-voice-default").addEventListener("click", copyVoiceStyleToProjectDefault);
+  $("voice-style").addEventListener("change", () => { $("copy-voice-default").disabled = state.busy || !$("voice-style").value; });
   $("close-project-manifest").addEventListener("click", () => $("project-manifest-dialog").close());
   $("create-visual-take").addEventListener("click", createVisualTake);
   $("open-visual-take").addEventListener("click", openVisualTake);

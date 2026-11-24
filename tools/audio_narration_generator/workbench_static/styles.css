@@ -273,6 +273,7 @@ audio { width: 100%; height: 34px; }
 .project-voice-form input, .project-voice-form textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid var(--line); background: var(--sheet); color: var(--ink); font: 13px/1.45 Arial, sans-serif; }
 .project-voice-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .project-voice-status { min-height: 1em; margin: 0; color: var(--muted); font-size: 12px; }
+.copy-voice-default { width: fit-content; max-width: 100%; margin-top: 5px; white-space: normal; text-align: left; }
 .project-manifest-group { padding: 17px 0; border-bottom: 1px solid var(--line); }
 .project-manifest-group--nested { margin-left: 12px; padding: 10px 0 8px 14px; border-bottom: 0; border-left: 2px solid var(--line); }
 .project-manifest-group h2, .project-manifest-group h3 { margin: 0 0 10px; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif; letter-spacing: -.025em; }
